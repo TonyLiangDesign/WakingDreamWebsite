@@ -20,44 +20,34 @@ body {
   background-color: #000;
 }
 
-.hero {
-  min-height: 100vh;
-  width: 100%;
+.page {
+  min-height: 100svh;
+  width: min(100%, 980px);
+  margin: 0 auto;
   display: grid;
-  align-content: start;
-  padding: clamp(28px, 7vw, 84px);
-  background: #000;
-  position: relative;
-  overflow: hidden;
+  grid-template-rows: auto 1fr auto;
+  gap: 22px;
+  padding: clamp(20px, 5vw, 44px);
 }
 
-.hero::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: transparent;
-  pointer-events: none;
-  z-index: 0;
+.top-brand {
+  justify-self: start;
+  color: var(--text-soft);
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.8;
 }
 
-.chair {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  transform: translateX(-50%);
-  height: min(84vh, 960px);
-  width: auto;
-  object-fit: contain;
-  z-index: 1;
-  filter: drop-shadow(0 24px 44px rgba(0, 0, 0, 0.48));
+.image-wrap {
+  display: grid;
+  place-items: center;
+  min-height: 0;
 }
 
 .beta-card {
-  position: absolute;
-  right: clamp(28px, 7vw, 84px);
-  bottom: clamp(26px, 6vw, 62px);
-  width: min(360px, calc(100vw - 56px));
-  z-index: 2;
+  width: min(460px, 100%);
+  justify-self: center;
   padding: 18px;
   background: rgba(8, 8, 8, 0.7);
   border: 1px solid var(--line-soft);
@@ -118,47 +108,21 @@ body {
   opacity: 0.75;
 }
 
-.footer-note {
-  position: absolute;
-  left: clamp(28px, 7vw, 84px);
-  bottom: clamp(24px, 5vw, 52px);
-  color: var(--text-soft);
-  font-size: 0.72rem;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  opacity: 0.75;
-  z-index: 2;
-}
-
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.chair {
+  width: auto;
+  height: min(56vh, 720px);
+  max-width: 100%;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 24px 44px rgba(0, 0, 0, 0.48));
 }
 
 @media (max-width: 700px) {
-  .hero {
-    align-content: start;
-  }
-
   .chair {
-    height: min(72vh, 680px);
+    height: min(52vh, 560px);
   }
 
   .beta-card {
-    left: 28px;
-    right: 28px;
-    width: auto;
-    bottom: 86px;
-  }
-
-  .footer-note {
-    left: 28px;
-    bottom: 26px;
+    width: 100%;
   }
 }
