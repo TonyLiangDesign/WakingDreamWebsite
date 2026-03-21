@@ -52,29 +52,6 @@ body {
   filter: drop-shadow(0 24px 44px rgba(0, 0, 0, 0.48));
 }
 
-.copy {
-  position: relative;
-  z-index: 2;
-  max-width: 560px;
-  animation: fade-up 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.brand {
-  margin: 0;
-  font-size: 0.7rem;
-  letter-spacing: 0.34em;
-  color: var(--text-soft);
-}
-
-h1 {
-  margin: 14px 0 0;
-  font-family: "Cormorant Garamond", Georgia, "Times New Roman", serif;
-  font-weight: 500;
-  font-size: clamp(2.2rem, 6.6vw, 5.1rem);
-  line-height: 0.9;
-  text-wrap: balance;
-}
-
 .beta-card {
   position: absolute;
   right: clamp(28px, 7vw, 84px);
