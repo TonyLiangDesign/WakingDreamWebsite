@@ -3,25 +3,74 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Thank You | Waking Dream</title>
-    <meta name="description" content="Thanks for applying to Waking Dream Private Beta." />
+    <title>Thank You | Waking Dream Technology</title>
+    <meta name="description" content="Thanks. We have your details." />
+    <meta name="robots" content="noindex" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
+  <body data-product="studio">
+    <header class="nav is-scrolled" id="nav">
+      <div class="wrap">
+        <a class="wordmark" href="/">Waking Dream <span>Technology</span></a>
+        <nav aria-label="Products">
+          <ul>
+            <li><a href="/onechair/">OneChair</a></li>
+            <li><a href="/tessera/">Tessera</a></li>
+            <li><a href="/titanic/">Titanic</a></li>
+            <li><a href="/about/">About</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
     <main class="thanks-page">
-      <p class="top-brand">Waking Dream Technology</p>
-      <section class="thanks-card">
-        <p class="beta-title">Private Beta</p>
-        <h1>Thank you.</h1>
-        <p class="thanks-text">Your application has been received. We will contact selected creators soon.</p>
-        <a class="thanks-link" href="/">Back to Home</a>
-      </section>
+      <div class="wrap" style="display: grid; justify-items: center;">
+        <section class="card thanks-card">
+          <p class="eyebrow" id="thanks-eyebrow">Waking Dream</p>
+          <h1>Thank you.</h1>
+          <p id="thanks-text">We have your details and will be in touch.</p>
+          <a class="link" id="thanks-back" href="/">Back to the studio</a>
+        </section>
+      </div>
     </main>
+
+    <script>
+      (function () {
+        var p = new URLSearchParams(location.search).get("p");
+        var copy = {
+          onechair: {
+            eyebrow: "OneChair · Private beta",
+            text: "Your application is in. We are inviting creators in small groups and will write to you when your turn comes.",
+            back: "/onechair/",
+            label: "Back to OneChair"
+          },
+          tessera: {
+            eyebrow: "Tessera",
+            text: "You are on the list. One email on launch day, and possibly a TestFlight invitation before that.",
+            back: "/tessera/",
+            label: "Back to Tessera"
+          },
+          titanic: {
+            eyebrow: "Back to Titanic",
+            text: "You are following the build. The next log entry will land in your inbox.",
+            back: "/titanic/",
+            label: "Back to Titanic"
+          }
+        }[p];
+        if (!copy) return;
+        document.getElementById("thanks-eyebrow").textContent = copy.eyebrow;
+        document.getElementById("thanks-text").textContent = copy.text;
+        var back = document.getElementById("thanks-back");
+        back.href = copy.back;
+        back.textContent = copy.label;
+        document.body.setAttribute("data-product", p);
+      })();
+    </script>
   </body>
 </html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>About | Waking Dream Technology</title>
+    <meta name="description" content="Waking Dream Technology is a small studio in Auckland, New Zealand, founded by Tony Liang. We build OneChair, Tessera and Back to Titanic." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-product="studio">
+    <header class="nav" id="nav">
+      <div class="wrap">
+        <a class="wordmark" href="/">Waking Dream <span>Technology</span></a>
+        <nav aria-label="Products">
+          <ul>
+            <li><a href="/onechair/">OneChair</a></li>
+            <li><a href="/tessera/">Tessera</a></li>
+            <li><a href="/titanic/">Titanic</a></li>
+            <li><a href="/about/" aria-current="page">About</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero hero-center">
+        <div class="wrap">
+          <div>
+            <p class="eyebrow">About the studio</p>
+            <h1>A small studio for large pictures.</h1>
+            <p class="lede">
+              Waking Dream Technology was founded in Auckland, New Zealand by Tony Liang, a designer
+              who kept running into the same wall: the picture was clear, and everything between the
+              picture and the finished thing was not.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="about">
+        <div class="wrap">
+          <div>
+            <p class="eyebrow">What we make</p>
+            <h2>Three projects, one question.</h2>
+          </div>
+          <div>
+            <p>
+              <strong>OneChair</strong> is a film studio in one chair: story, previz, generation and the
+              whole film on one board, for directors without a crew.
+            </p>
+            <p>
+              <strong>Tessera</strong> is 3D without the 3D workflow: describe a scene, and it is
+              generated, lit and path traced on your own device.
+            </p>
+            <p>
+              <strong>Back to Titanic</strong> is the same idea turned on a real place: a full-ship
+              reconstruction of RMS Titanic you can walk, and the five days of April 1912 told from
+              inside it.
+            </p>
+            <p>
+              We are a small team and we ship in the open. Each project page carries its current status
+              honestly, including what is not built yet.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="specs" aria-label="Contact">
+        <div class="wrap">
+          <dl class="spec"><dt>Email</dt><dd><a href="mailto:tony@wakingdream.co.nz">tony@wakingdream.co.nz</a></dd></dl>
+          <dl class="spec"><dt>Location</dt><dd>Auckland, New Zealand</dd></dl>
+          <dl class="spec"><dt>Founded by</dt><dd>Tony Liang</dd></dl>
+          <dl class="spec"><dt>Company</dt><dd>Waking Dream Technology Ltd.</dd></dl>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <div>
+          <h4>Products</h4>
+          <ul>
+            <li><a href="/onechair/">OneChair</a></li>
+            <li><a href="/tessera/">Tessera</a></li>
+            <li><a href="/titanic/">Back to Titanic</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Studio</h4>
+          <ul>
+            <li><a href="/about/">About</a></li>
+            <li><a href="mailto:tony@wakingdream.co.nz">tony@wakingdream.co.nz</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Waking Dream Technology</h4>
+          <p class="colophon">Auckland, New Zealand<br />© 2026 Waking Dream Technology Ltd.</p>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      (function () {
+        var nav = document.getElementById("nav");
+        function onScroll() { nav.classList.toggle("is-scrolled", window.scrollY > 8); }
+        window.addEventListener("scroll", onScroll, { passive: true });
+        onScroll();
+      })();
+    </script>
+  </body>
+</html>

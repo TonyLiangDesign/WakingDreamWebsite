@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tessera | Waking Dream Technology</title>
+    <meta
+      name="description"
+      content="Tessera turns ideas into 3D scenes. Describe what you want; AI generates and arranges objects, materials and lighting on your device, then path tracing and MetalFX denoising render it. No 3D workflow required."
+    />
+    <meta property="og:title" content="Tessera — describe a scene, watch it render" />
+    <meta property="og:description" content="AI builds, lights and renders your 3D scene on device. No traditional 3D workflow required." />
+    <meta property="og:image" content="https://wakingdream.co.nz/assets/tessera-mushroom.jpg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-product="tessera">
+    <header class="nav" id="nav">
+      <div class="wrap">
+        <a class="wordmark" href="/">Waking Dream <span>Technology</span></a>
+        <nav aria-label="Products">
+          <ul>
+            <li><a href="/onechair/">OneChair</a></li>
+            <li><a href="/tessera/" aria-current="page">Tessera</a></li>
+            <li><a href="/titanic/">Titanic</a></li>
+            <li><a href="/about/">About</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="wrap">
+          <div>
+            <p class="eyebrow">Tessera · Coming soon for iPhone, iPad and Mac</p>
+            <h1>Describe a scene. Watch it render.</h1>
+            <p class="lede">
+              Tessera turns ideas into 3D scenes: describe what you want, and AI generates and arranges
+              objects, materials, and lighting, while you refine every detail. No traditional 3D
+              workflow required.
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-accent" href="#notify">Get notified at launch</a>
+              <a class="link" href="#how">How it works</a>
+            </div>
+          </div>
+          <div class="hero-media">
+            <img src="/assets/tessera-mushroom.jpg" alt="A path-traced frog sheltering under a mushroom, generated and rendered in Tessera" />
+          </div>
+        </div>
+      </section>
+
+      <section class="features" id="how">
+        <div class="wrap">
+          <article class="feature">
+            <div class="feature-text">
+              <p class="eyebrow">Describe, don't model</p>
+              <h2>Say what you want. The scene assembles itself.</h2>
+              <p>
+                Type a sentence and Tessera generates the objects, places them, dresses them in
+                materials and sets the light. Then it hands you the scene: every object, every material,
+                every lamp stays yours to move, swap or tune, in words or by hand.
+              </p>
+            </div>
+            <div class="feature-media">
+              <img src="/assets/tessera-leaf.jpg" alt="A frog holding a leaf as an umbrella, a second scene from the same description with a different prop" />
+            </div>
+          </article>
+
+          <article class="feature flip">
+            <div class="feature-text">
+              <p class="eyebrow">Generated on your device</p>
+              <h2>Experiment freely. Nothing leaves the room.</h2>
+              <p>
+                On supported devices, models generate entirely on device, so you can experiment freely
+                without cloud fees. Try ten versions of a prop, throw nine away, and pay nothing for
+                the ones you didn't keep.
+              </p>
+            </div>
+            <div class="feature-media placeholder" role="img" aria-label="On-device generation screen recording to come">ON-DEVICE GENERATION · RECORDING</div>
+          </article>
+
+          <article class="feature">
+            <div class="feature-text">
+              <p class="eyebrow">Rendered like a film frame</p>
+              <h2>Path traced, denoised, and finished while you watch.</h2>
+              <p>
+                Interactive path tracing and MetalFX denoising turn your scene into a richly detailed,
+                high-quality render. Light bounces where it should, glass refracts, skin scatters, and
+                the image resolves in front of you instead of in a queue.
+              </p>
+            </div>
+            <div class="feature-media placeholder" role="img" aria-label="Path tracing screen recording to come">PATH TRACING · RECORDING</div>
+          </article>
+        </div>
+      </section>
+
+      <section class="specs" aria-label="At a glance">
+        <div class="wrap">
+          <dl class="spec"><dt>Platforms</dt><dd>iPhone · iPad · Mac</dd></dl>
+          <dl class="spec"><dt>Generation</dt><dd>On device, on supported hardware</dd></dl>
+          <dl class="spec"><dt>Renderer</dt><dd>Path tracing + MetalFX denoising</dd></dl>
+          <dl class="spec"><dt>Scene format</dt><dd>USD, one document per set</dd></dl>
+        </div>
+      </section>
+
+      <section class="cta" id="notify">
+        <div class="wrap">
+          <div>
+            <p class="eyebrow">Launch</p>
+            <h2>Be the first to know when Tessera ships.</h2>
+            <p>
+              One email on launch day, and possibly one TestFlight invitation before that. Nothing else.
+            </p>
+          </div>
+          <div class="card">
+            <p class="card-title">Notify me</p>
+            <form class="form" action="https://formsubmit.co/tony@wakingdream.co.nz" method="post">
+              <input type="hidden" name="_subject" value="Tessera launch notification" />
+              <input type="hidden" name="_captcha" value="false" />
+              <input type="hidden" name="_template" value="table" />
+              <input type="hidden" name="product" value="Tessera" />
+              <input type="hidden" name="_next" value="https://wakingdream.co.nz/thank-you.html?p=tessera" />
+
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" autocomplete="email" required />
+
+              <label for="device">Where would you use it?</label>
+              <select id="device" name="device">
+                <option value="" selected disabled>Select one</option>
+                <option value="iphone">iPhone</option>
+                <option value="ipad">iPad</option>
+                <option value="mac">Mac</option>
+                <option value="all">All of them</option>
+              </select>
+
+              <button class="btn btn-accent" type="submit">Notify me</button>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <div>
+          <h4>Products</h4>
+          <ul>
+            <li><a href="/onechair/">OneChair</a></li>
+            <li><a href="/tessera/">Tessera</a></li>
+            <li><a href="/titanic/">Back to Titanic</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Studio</h4>
+          <ul>
+            <li><a href="/about/">About</a></li>
+            <li><a href="mailto:tony@wakingdream.co.nz">tony@wakingdream.co.nz</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Waking Dream Technology</h4>
+          <p class="colophon">Auckland, New Zealand<br />© 2026 Waking Dream Technology Ltd.</p>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      (function () {
+        var nav = document.getElementById("nav");
+        function onScroll() { nav.classList.toggle("is-scrolled", window.scrollY > 8); }
+        window.addEventListener("scroll", onScroll, { passive: true });
+        onScroll();
+      })();
+    </script>
+  </body>
+</html>
