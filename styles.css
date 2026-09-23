@@ -145,10 +145,13 @@ p:last-child { margin-bottom: 0; }
 .nav li a:hover { color: var(--text); }
 .nav li a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
 
+@media (max-width: 960px) {
+  .nav .wrap { flex-wrap: wrap; height: auto; padding: 14px 0 10px; gap: 6px 16px; }
+  .nav ul { width: 100%; justify-content: flex-end; flex-wrap: wrap; gap: 6px 16px; }
+}
 @media (max-width: 560px) {
-  .nav .wrap { flex-wrap: wrap; height: auto; padding: 14px 0 10px; gap: 8px 16px; }
-  .nav ul { width: 100%; justify-content: space-between; gap: 10px; }
-  .nav li a { font-size: 0.64rem; letter-spacing: 0.1em; }
+  .nav ul { justify-content: space-between; gap: 8px 12px; }
+  .nav li a { font-size: 0.62rem; letter-spacing: 0.08em; }
 }
 
 /* ---------- hero ---------- */

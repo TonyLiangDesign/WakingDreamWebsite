@@ -8,6 +8,7 @@ Static studio site with three product pages. No build step; plain HTML + one sty
 /tessera/         Tessera — describe a scene, rendered on device (notify-me form)
 /titanic/         Back to Titanic — full-ship reconstruction + timeline + build log
 /about/           studio
+/aquarium/        saltwater reef tank (Three.js, procedural, CDN)
 /thank-you.html   form landing; `?p=onechair|tessera|titanic` picks the copy
 /assets/          images
 /_drafts/         local-only scratch (git-ignored)
