@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Aquarium | Waking Dream Technology</title>
+    <meta
+      name="description"
+      content="A saltwater reef tank. Fish, sand, bubbles, and the light on the surface."
+    />
+    <meta name="theme-color" content="#063848" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link
+      rel="modulepreload"
+      href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+      crossorigin
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@500&display=swap"
+      />
+    </noscript>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background:
+          radial-gradient(ellipse 90% 42% at 50% 0%, rgba(186, 236, 226, 0.34), transparent 58%),
+          linear-gradient(#1a8ea0 0%, #0d6578 16%, #084a5e 42%, #063444 68%, #102e2c 100%);
+        color: #f4f7f6;
+      }
+      #tank {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+      .veil {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 1;
+        background: radial-gradient(ellipse at 50% 42%, transparent 52%, rgba(0, 12, 18, 0.28) 100%);
+        box-shadow: inset 0 0 90px rgba(0, 16, 24, 0.18);
+      }
+      .back {
+        position: fixed;
+        z-index: 2;
+        top: max(16px, env(safe-area-inset-top));
+        left: max(18px, env(safe-area-inset-left));
+        font-family: "Montserrat", "Avenir Next", "Segoe UI", sans-serif;
+        font-size: 0.7rem;
+        font-weight: 500;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: rgba(247, 243, 237, 0.78);
+        text-decoration: none;
+        text-shadow: 0 1px 10px rgba(0, 18, 28, 0.55);
+      }
+      .back:hover { color: #f7f3ed; }
+      .back:focus-visible {
+        outline: 2px solid #f7f3ed;
+        outline-offset: 4px;
+      }
+      .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 3;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        transition: opacity 700ms ease;
+      }
+      #boot.is-done { opacity: 0; }
+      #boot span {
+        font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+        font-size: 11px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: rgba(232, 248, 250, 0.72);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot { transition: none; }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="tank" role="img" aria-label="A saltwater reef aquarium"></canvas>
+    <div class="veil" aria-hidden="true"></div>
+    <a class="back" href="/"><span class="sr-only">Back to </span>Waking Dream</a>
+    <div id="boot" aria-hidden="true"><span>Filling the tank</span></div>
+    <noscript><p style="position:fixed;inset:auto 20px 24px;z-index:4">This aquarium needs JavaScript.</p></noscript>
+    <script type="module" src="./tank.js"></script>
+  </body>
+</html>
