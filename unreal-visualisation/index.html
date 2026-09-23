@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Unreal Visualisation | Waking Dream Technology</title>
+    <meta name="description" content="Selected Unreal Engine work by Tony Liang: automotive rendering, digital humans, interactive UI and digital medals." />
+    <meta property="og:title" content="Unreal Visualisation | Waking Dream Technology" />
+    <meta property="og:description" content="Virtual or real, the experience is what remains. Selected Unreal Engine work by Tony Liang." />
+    <meta property="og:image" content="https://wakingdream.co.nz/assets/unreal/hyundai-console-1600.webp" />
+    <link rel="canonical" href="https://wakingdream.co.nz/unreal-visualisation/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css?v=20260924-unreal-first" />
+  </head>
+  <body data-product="unreal">
+    <header class="nav" id="nav">
+      <div class="wrap">
+        <a class="wordmark" href="/">Waking Dream <span>Technology</span></a>
+        <nav aria-label="Main navigation">
+          <ul>
+            <li><a href="/unreal-visualisation/" aria-current="page">Unreal Visualisation</a></li>
+            <li><a href="/tessera/">Tessera</a></li>
+            <li><a href="/titanic/">Titanic</a></li>
+            <li><a href="/about/">About</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main class="visualisation">
+      <section class="work-intro wrap" aria-labelledby="work-title">
+        <p class="eyebrow">Selected work · Tony Liang</p>
+        <h1 id="work-title">Unreal<br />Visualisation.</h1>
+        <p class="lede">Virtual or real, the experience is what remains.</p>
+        <button class="motion-toggle" type="button" aria-pressed="false">Pause motion</button>
+      </section>
+
+      <article class="work-scene work-automotive" aria-labelledby="automotive-title">
+        <div class="scene-heading wrap">
+          <p class="eyebrow">01 / Automotive</p>
+          <h2 id="automotive-title">Hyundai SUV.</h2>
+          <p>Every surface. Every detail.</p>
+        </div>
+        <div class="scene-stage automotive-stage" id="automotive-gallery" aria-label="Hyundai SUV renders">
+          <img class="automotive-slide is-active" src="/assets/unreal/hyundai-steering-1600.webp" srcset="/assets/unreal/hyundai-steering-800.webp 800w, /assets/unreal/hyundai-steering-1600.webp 1600w, /assets/unreal/hyundai-steering-2560.webp 2560w" sizes="(max-width: 400px) calc(100vw - 40px), (max-width: 960px) 90vw, (max-width: 1216px) calc(100vw - 96px), 1120px" width="2560" height="1600" alt="Hyundai steering wheel and the full driver-side cabin" aria-hidden="false" fetchpriority="high" />
+          <img class="automotive-slide" src="/assets/unreal/hyundai-console-1600.webp" srcset="/assets/unreal/hyundai-console-800.webp 800w, /assets/unreal/hyundai-console-1600.webp 1600w, /assets/unreal/hyundai-console-2560.webp 2560w" sizes="(max-width: 400px) calc(100vw - 40px), (max-width: 960px) 90vw, (max-width: 1216px) calc(100vw - 96px), 1120px" width="2560" height="1600" alt="Hyundai centre console with stitched leather, brushed metal and illuminated drive controls" aria-hidden="true" decoding="async" />
+          <img class="automotive-slide" src="/assets/unreal/hyundai-paddle-1600.webp" srcset="/assets/unreal/hyundai-paddle-800.webp 800w, /assets/unreal/hyundai-paddle-1600.webp 1600w, /assets/unreal/hyundai-paddle-2560.webp 2560w" sizes="(max-width: 400px) calc(100vw - 40px), (max-width: 960px) 90vw, (max-width: 1216px) calc(100vw - 96px), 1120px" width="2560" height="1600" alt="Hyundai paddle shifter and perforated leather steering wheel with red stitching" aria-hidden="true" decoding="async" />
+        </div>
+        <div class="carousel-dots" role="group" aria-label="Choose a car render">
+          <button class="carousel-dot" type="button" aria-label="Show image 3: steering" aria-controls="automotive-gallery" aria-pressed="true"></button>
+          <button class="carousel-dot" type="button" aria-label="Show image 1: console" aria-controls="automotive-gallery" aria-pressed="false"></button>
+          <button class="carousel-dot" type="button" aria-label="Show image 2: paddle" aria-controls="automotive-gallery" aria-pressed="false"></button>
+        </div>
+      </article>
+
+      <article class="work-scene work-metahuman" aria-labelledby="metahuman-title">
+        <div class="scene-heading wrap">
+          <p class="eyebrow">02 / Digital human</p>
+          <h2 id="metahuman-title">Metahuman.</h2>
+          <p>Expression comes to life.</p>
+        </div>
+        <div class="scene-stage">
+          <video class="work-video" autoplay muted loop playsinline preload="none" poster="/assets/unreal/sj01.webp" width="1280" height="720" aria-label="Metahuman digital character animation" tabindex="-1">
+            <source data-src="/assets/unreal/sj01.webm" type="video/webm" />
+            <source data-src="/assets/unreal/sj01.mp4" type="video/mp4" />
+          </video>
+        </div>
+      </article>
+
+      <article class="work-scene work-ui" aria-labelledby="ui-title">
+        <div class="scene-heading wrap">
+          <p class="eyebrow">03 / Interface</p>
+          <h2 id="ui-title">VintageUI.</h2>
+          <p>An interface with atmosphere.</p>
+        </div>
+        <div class="scene-stage">
+          <video class="work-video" autoplay muted loop playsinline preload="none" poster="/assets/unreal/vintage-ui.webp" width="1440" height="772" aria-label="VintageUI interactive game settings demonstration" tabindex="-1">
+            <source data-src="/assets/unreal/vintage-ui.webm" type="video/webm" />
+            <source data-src="/assets/unreal/vintage-ui.mp4" type="video/mp4" />
+          </video>
+        </div>
+      </article>
+
+      <article class="work-scene work-medal" aria-labelledby="medal-title">
+        <div class="scene-heading wrap">
+          <p class="eyebrow">04 / Digital collectible</p>
+          <h2 id="medal-title">Digital Medal.</h2>
+          <p>Achievement, in a new dimension.</p>
+        </div>
+        <div class="scene-stage">
+          <video class="work-video" autoplay muted loop playsinline preload="none" poster="/assets/unreal/digital-medal.webp" width="720" height="1280" aria-label="Animated digital medal with reflective surfaces" tabindex="-1">
+            <source data-src="/assets/unreal/digital-medal.webm" type="video/webm" />
+            <source data-src="/assets/unreal/digital-medal.mp4" type="video/mp4" />
+          </video>
+        </div>
+      </article>
+
+      <div class="work-contact wrap">
+        <p>Have something in mind?</p>
+        <a class="link" href="mailto:tony@wakingdream.co.nz">Let’s talk <span aria-hidden="true">↗</span></a>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap">
+        <div>
+          <h4>Products</h4>
+          <ul>
+            <li><a href="/tessera/">Tessera</a></li>
+            <li><a href="/titanic/">Back to Titanic</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Studio</h4>
+          <ul>
+            <li><a href="/unreal-visualisation/">Unreal Visualisation</a></li>
+            <li><a href="/about/">About</a></li>
+            <li><a href="mailto:tony@wakingdream.co.nz">tony@wakingdream.co.nz</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Waking Dream Technology</h4>
+          <p class="colophon">Auckland, New Zealand<br />© 2026 Waking Dream Technology Ltd.</p>
+        </div>
+      </div>
+    </footer>
+
+    <script src="/unreal-visualisation/motion.js?v=20260924-carousel-compact" defer></script>
+  </body>
+</html>

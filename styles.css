@@ -153,6 +153,56 @@ p:last-child { margin-bottom: 0; }
 
 /* ---------- hero ---------- */
 
+/* Give the studio work link room alongside the product navigation. */
+@media (max-width: 1040px) {
+  .nav .wrap { flex-wrap: wrap; height: auto; padding: 14px 0 12px; gap: 8px 16px; }
+  .nav nav { width: 100%; }
+  .nav ul { flex-wrap: wrap; gap: 6px 20px; }
+}
+
+/* ---------- selected Unreal work ---------- */
+
+body[data-product="unreal"] { --bg: #000; background: #000; }
+.work-intro { padding: clamp(64px, 10vw, 140px) 0 clamp(56px, 8vw, 112px); text-align: center; }
+.work-intro h1 { font-size: clamp(2.25rem, 9vw, 8rem); line-height: 0.98; letter-spacing: -0.06em; font-weight: 600; margin-bottom: 28px; }
+.work-intro .eyebrow, .scene-heading .eyebrow { margin-left: auto; margin-right: auto; }
+.work-intro .lede { margin: 0 auto; font-size: clamp(1.05rem, 2vw, 1.5rem); }
+.motion-toggle { margin-top: 28px; border: 1px solid var(--line); border-radius: 999px; padding: 9px 16px; background: transparent; color: var(--text-soft); font: 0.72rem var(--font); cursor: pointer; }
+.motion-toggle:hover { border-color: var(--text-soft); color: var(--text); }
+.work-scene { margin: 0; padding-top: clamp(44px, 7vw, 96px); }
+.scene-heading { text-align: center; margin-bottom: clamp(28px, 4vw, 56px); }
+.scene-heading h2 { font-size: clamp(2.7rem, 6.5vw, 6rem); line-height: 1.04; letter-spacing: -0.045em; font-weight: 600; margin-bottom: 18px; }
+.scene-heading p:not(.eyebrow) { font-size: clamp(1rem, 1.8vw, 1.3rem); margin: 0 auto; }
+.scene-stage { position: relative; width: min(100% - 2 * var(--gutter), var(--wrap)); margin: 0 auto; aspect-ratio: 16 / 9; overflow: hidden; background: #000; }
+.scene-stage img, .work-video { display: block; width: 100%; height: 100%; object-fit: cover; }
+.automotive-stage { aspect-ratio: 16 / 10; }
+.automotive-stage img { position: absolute; inset: 0; }
+.automotive-slide { opacity: 0; transition: opacity 800ms ease; }
+.automotive-slide.is-active { opacity: 1; }
+.carousel-dots { display: flex; justify-content: center; gap: 0; padding-top: 12px; }
+.carousel-dot { display: grid; place-items: center; width: 20px; height: 44px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.carousel-dot::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #626262; transition: background-color 180ms ease; }
+.carousel-dot:hover::before { background: #b9b9b9; }
+.carousel-dot[aria-pressed="true"]::before { background: var(--text); }
+.work-ui .scene-stage { aspect-ratio: 1440 / 772; }
+.work-ui .work-video, .work-medal .work-video { object-fit: contain; }
+.work-medal .scene-stage { height: min(680px, 140vw); aspect-ratio: auto; }
+.work-contact { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: clamp(64px, 10vw, 140px); margin-bottom: 48px; padding-top: 28px; border-top: 1px solid var(--line); }
+.work-contact p { margin: 0; }
+.work-contact .link { white-space: nowrap; }
+.work-preview { padding: 0 0 clamp(48px, 8vw, 96px); }
+.work-preview .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(24px, 5vw, 64px); align-items: center; }
+.work-preview img { width: 100%; }
+.work-preview a:hover .link { color: var(--text); }
+
+@media (max-width: 640px) {
+  .work-preview .wrap { grid-template-columns: 1fr; }
+  .work-contact { align-items: start; flex-direction: column; gap: 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .automotive-slide { transition: none; }
+}
+
 .hero { padding: clamp(40px, 8vw, 96px) 0 clamp(32px, 6vw, 72px); }
 .hero .wrap {
   display: grid;
@@ -206,7 +256,7 @@ p:last-child { margin-bottom: 0; }
 .tiles { padding: 0 0 clamp(48px, 8vw, 96px); }
 .tiles .wrap {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
 .tile {
