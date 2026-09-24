@@ -9,35 +9,42 @@
   var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   var paused = reducedMotion.matches;
   var visible = new Set();
-  var carSlides = Array.from(document.querySelectorAll(".automotive-slide"));
-  var carDots = Array.from(document.querySelectorAll(".carousel-dot"));
-  var carVisible = false;
-  var carIndex = 0;
-  var carTimer;
+  var carousels = Array.from(document.querySelectorAll("[data-carousel]")).map(function (stage) {
+    return {
+      stage: stage,
+      slides: Array.from(stage.querySelectorAll(".carousel-slide")),
+      dots: Array.from(stage.parentElement.querySelectorAll(".carousel-dot")),
+      visible: false,
+      index: 0,
+      timer: null
+    };
+  });
 
-  function showCar(index) {
-    carIndex = index;
-    carSlides.forEach(function (slide, i) {
+  function showSlide(carousel, index) {
+    carousel.index = index;
+    carousel.slides.forEach(function (slide, i) {
       slide.classList.toggle("is-active", i === index);
       slide.setAttribute("aria-hidden", String(i !== index));
-      carDots[i].setAttribute("aria-pressed", String(i === index));
+      carousel.dots[i].setAttribute("aria-pressed", String(i === index));
     });
   }
 
-  function syncCarousel() {
-    window.clearTimeout(carTimer);
-    if (!paused && !document.hidden && carVisible) {
-      carTimer = window.setTimeout(function () {
-        showCar((carIndex + 1) % carSlides.length);
-        syncCarousel();
+  function syncCarousel(carousel) {
+    window.clearTimeout(carousel.timer);
+    if (!paused && !document.hidden && carousel.visible) {
+      carousel.timer = window.setTimeout(function () {
+        showSlide(carousel, (carousel.index + 1) % carousel.slides.length);
+        syncCarousel(carousel);
       }, 5000);
     }
   }
 
-  carDots.forEach(function (dot, index) {
-    dot.addEventListener("click", function () {
-      showCar(index);
-      syncCarousel();
+  carousels.forEach(function (carousel) {
+    carousel.dots.forEach(function (dot, index) {
+      dot.addEventListener("click", function () {
+        showSlide(carousel, index);
+        syncCarousel(carousel);
+      });
     });
   });
 
@@ -56,7 +63,7 @@
     document.body.classList.toggle("motion-enabled", !paused);
     toggle.textContent = paused ? "Play motion" : "Pause motion";
     toggle.setAttribute("aria-pressed", String(paused));
-    syncCarousel();
+    carousels.forEach(syncCarousel);
     videos.forEach(function (video) {
       if (paused || document.hidden || !visible.has(video)) {
         video.pause();
@@ -82,13 +89,14 @@
           if (active) visible.add(entry.target);
           else visible.delete(entry.target);
         } else {
-          carVisible = active;
+          var carousel = carousels.find(function (item) { return item.stage === entry.target; });
+          if (carousel) carousel.visible = active;
         }
       });
       sync();
     }, { threshold: [0, 0.15] });
     videos.forEach(function (video) { observer.observe(video); });
-    observer.observe(document.querySelector(".automotive-stage"));
+    carousels.forEach(function (carousel) { observer.observe(carousel.stage); });
   }
   // Without an observer or JavaScript the static posters remain a complete presentation.
   sync();

@@ -1,14 +1,14 @@
 # Waking Dream Technology — wakingdream.co.nz
 
-Static studio site with two listed product pages, a selected-work page and an unlisted OneChair page. No build step; plain HTML + one stylesheet.
+Static studio site with two listed project pages, a selected-work page and an unlisted OneChair page. No build step; plain HTML + one stylesheet.
 
 ```
 /                 studio home
 /onechair/        OneChair — temporarily unlisted; retained for restoration (noindex)
-/tessera/         Tessera — describe a scene, rendered on device (notify-me form)
-/titanic/         Back to Titanic — full-ship reconstruction + timeline + build log
+/tessera/         Tessera — 3D creation app for iOS, iPadOS and macOS; in development (notify-me form)
+/titanic/         Back to Titanic — immersive project in development; experience + prototype views
 /about/           studio
-/unreal-visualisation/  automotive, Metahuman, VintageUI and Digital Medal case studies
+/unreal-visualisation/  automotive, Reebok IMPACT, Metahuman, Digital Medal and VintageUI case studies
 /thank-you.html   form landing; `?p=onechair|tessera|titanic` picks the copy
 /assets/          images
 /assets/unreal/   optimised WebP images, posters, WebM and MP4 videos
@@ -31,6 +31,14 @@ python3 -m http.server 8080
 Then open http://localhost:8080/ (opening `index.html` directly will not resolve `/styles.css`).
 
 ## Unreal Visualisation media
+
+Reebok IMPACT credits Reebok and Futureverse. Its four supplied square renders
+appear in a square carousel with four selection dots, matching the automotive controls.
+Both carousels rotate independently every five seconds while visible and respect
+the shared motion toggle and reduced-motion preference. WebP copies at 540 px and
+1080 px use responsive image selection and lazy loading; the original PNGs remain
+in iCloud at `Dropbox 备份/WorksOld/ReebokImpact/PNG`. The images follow the supplied
+order: `Showcase_04Image`, `Showcase02_Image`, `Showcase03_Image`, `Showcase04_Image`.
 
 The page uses web copies of the selected portfolio originals. Originals remain outside
 this repository. All three videos preserve their full duration and audio. Browsers
@@ -67,7 +75,7 @@ quality is 87 for automotive stills and 85 for posters.
 
 ## Forms
 
-All three forms post to formsubmit.co for `tony@wakingdream.co.nz`. The **first** submission
+The Tessera and Titanic forms post to formsubmit.co for `tony@wakingdream.co.nz`. The **first** submission
 to a new address triggers an activation email from formsubmit — click it once or nothing is
 delivered. Each form carries a hidden `product` field and redirects to `/thank-you.html?p=…`.
 
