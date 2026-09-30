@@ -41,7 +41,7 @@ in iCloud at `Dropbox 备份/WorksOld/ReebokImpact/PNG`. The images follow the s
 order: `Showcase_04Image`, `Showcase02_Image`, `Showcase03_Image`, `Showcase04_Image`.
 
 The page uses web copies of the selected portfolio originals. Originals remain outside
-this repository. All three videos preserve their full duration and audio. Browsers
+this repository. The three original videos preserve their full duration and audio. Browsers
 receive a VP9/Opus WebM first, with H.264 MP4 as the compatibility fallback. MP4s
 use `yuv420p`, AAC audio at 80 kb/s, and `+faststart` for progressive playback.
 Scenes use the standard centred content width (maximum 1120 px) with silent,
@@ -50,8 +50,22 @@ original aspect ratio; the portrait medal is capped at 680 px high.
 Posters appear first; `motion.js` attaches sources and starts playback only when a
 scene enters the viewport. Off-screen videos and hidden tabs pause. The small
 page-level motion toggle and `prefers-reduced-motion` support static viewing.
-`playsinline` prevents fullscreen takeover on mobile. Metahuman uses the original
-SJ01 footage; its asset filenames remain `sj01` for continuity.
+`playsinline` prevents fullscreen takeover on mobile.
+
+Metahuman has two videos with selection dots below: Newsroom first, followed by
+the original SJ01 footage. Each video plays in full before advancing to the next;
+after SJ01 it returns to Newsroom. Manual selection starts the selected video from
+the beginning. Only the selected video loads and plays, and the shared motion,
+visibility and reduced-motion rules apply to both videos.
+
+Newsroom comes from `NewsRoom/Final/NewsroomDemo.mp4` (1600 × 900, 30 fps,
+29.78 seconds). Its H.264 video stream is copied without re-encoding, retaining
+the supplied picture quality; audio is removed entirely and `+faststart` moves
+the MP4 index to the front. The resulting `newsroom.mp4` is 6.55 MB, with a WebP
+poster. Nearby larger exports have longer runtimes rather than a meaningful
+resolution advantage, so the selected final edit remains the source.
+The Newsroom video and poster use a 0.6% display zoom inside the clipped stage
+to hide the thin top/left window edge embedded in the recording.
 
 | Asset | Original | MP4 copy | Resolution / encoding |
 | --- | --- | --- | --- |

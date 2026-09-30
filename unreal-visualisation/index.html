@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/styles.css?v=20260924-reebok-carousel" />
+    <link rel="stylesheet" href="/styles.css?v=20260930-newsroom-edge" />
   </head>
   <body data-product="unreal">
     <header class="nav" id="nav">
@@ -96,11 +96,18 @@
           <h2 id="metahuman-title">Metahuman.</h2>
           <p>Expression comes to life.</p>
         </div>
-        <div class="scene-stage">
-          <video class="work-video" autoplay muted loop playsinline preload="none" poster="/assets/unreal/sj01.webp" width="1280" height="720" aria-label="Metahuman digital character animation" tabindex="-1">
+        <div class="scene-stage" data-carousel data-video-carousel id="metahuman-gallery" role="group" aria-label="Metahuman videos">
+          <video class="work-video newsroom-video carousel-slide is-active" aria-hidden="false" autoplay muted playsinline preload="none" poster="/assets/unreal/newsroom.webp" width="1600" height="900" aria-label="Newsroom Metahuman presenter animation" tabindex="-1">
+            <source data-src="/assets/unreal/newsroom.mp4" type="video/mp4" />
+          </video>
+          <video class="work-video carousel-slide" aria-hidden="true" autoplay muted playsinline preload="none" poster="/assets/unreal/sj01.webp" width="1280" height="720" aria-label="Metahuman digital character animation" tabindex="-1">
             <source data-src="/assets/unreal/sj01.webm" type="video/webm" />
             <source data-src="/assets/unreal/sj01.mp4" type="video/mp4" />
           </video>
+        </div>
+        <div class="carousel-dots" role="group" aria-label="Choose a Metahuman video">
+          <button class="carousel-dot" type="button" aria-label="Show Newsroom video" aria-controls="metahuman-gallery" aria-pressed="true"></button>
+          <button class="carousel-dot" type="button" aria-label="Show original Metahuman video" aria-controls="metahuman-gallery" aria-pressed="false"></button>
         </div>
       </article>
 
@@ -167,6 +174,6 @@
       </div>
     </footer>
 
-    <script src="/unreal-visualisation/motion.js?v=20260924-multi-carousel" defer></script>
+    <script src="/unreal-visualisation/motion.js?v=20260930-metahuman-carousel" defer></script>
   </body>
 </html>

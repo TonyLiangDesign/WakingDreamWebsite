@@ -14,6 +14,7 @@
       stage: stage,
       slides: Array.from(stage.querySelectorAll(".carousel-slide")),
       dots: Array.from(stage.parentElement.querySelectorAll(".carousel-dot")),
+      video: stage.hasAttribute("data-video-carousel"),
       visible: false,
       index: 0,
       timer: null
@@ -21,6 +22,11 @@
   });
 
   function showSlide(carousel, index) {
+    if (carousel.video && carousel.index !== index) {
+      carousel.slides[carousel.index].pause();
+      var next = carousel.slides[index];
+      if (next.dataset.loaded) next.currentTime = 0;
+    }
     carousel.index = index;
     carousel.slides.forEach(function (slide, i) {
       slide.classList.toggle("is-active", i === index);
@@ -31,7 +37,7 @@
 
   function syncCarousel(carousel) {
     window.clearTimeout(carousel.timer);
-    if (!paused && !document.hidden && carousel.visible) {
+    if (!carousel.video && !paused && !document.hidden && carousel.visible) {
       carousel.timer = window.setTimeout(function () {
         showSlide(carousel, (carousel.index + 1) % carousel.slides.length);
         syncCarousel(carousel);
@@ -43,9 +49,19 @@
     carousel.dots.forEach(function (dot, index) {
       dot.addEventListener("click", function () {
         showSlide(carousel, index);
-        syncCarousel(carousel);
+        if (carousel.video) sync();
+        else syncCarousel(carousel);
       });
     });
+    if (carousel.video) {
+      carousel.slides.forEach(function (video, index) {
+        video.addEventListener("ended", function () {
+          if (carousel.index !== index || paused || document.hidden || !carousel.visible) return;
+          showSlide(carousel, (index + 1) % carousel.slides.length);
+          sync();
+        });
+      });
+    }
   });
 
   function load(video) {
@@ -65,8 +81,16 @@
     toggle.setAttribute("aria-pressed", String(paused));
     carousels.forEach(syncCarousel);
     videos.forEach(function (video) {
-      if (paused || document.hidden || !visible.has(video)) {
+      var carousel = carousels.find(function (item) { return item.video && item.stage.contains(video); });
+      var active = carousel ? carousel.visible && carousel.slides[carousel.index] === video : visible.has(video);
+      if (paused || document.hidden || !active) {
         video.pause();
+        return;
+      }
+      // An ended event can arrive as the scene leaves view or motion is paused.
+      if (carousel && video.ended) {
+        showSlide(carousel, (carousel.index + 1) % carousel.slides.length);
+        sync();
         return;
       }
       load(video);
