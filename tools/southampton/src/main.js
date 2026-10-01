@@ -225,8 +225,8 @@ function setAutoPlay(enabled) {
   carouselEnabled = enabled;
   carouselElapsed = 0;
   autoplayToggle.setAttribute('aria-pressed', String(enabled));
-  autoplayLabel.textContent = enabled ? 'Pause' : 'Auto play';
-  autoplayToggle.title = enabled ? 'Pause view carousel · A' : 'Auto play views · A';
+  autoplayLabel.textContent = 'Auto play';
+  autoplayToggle.title = `Auto play ${enabled ? 'on' : 'off'} · A`;
   hudShot.setAttribute('aria-live', enabled ? 'off' : 'polite');
   canvas.dataset.autoplay = enabled ? 'on' : 'off';
   if (enabled) {
@@ -435,6 +435,7 @@ if (params.has('shotTime')) {
   const shotTime = Number(params.get('shotTime'));
   if (Number.isFinite(shotTime)) player.seek(Math.max(0, shotTime));
 }
+if (!params.has('hold') && !params.has('capture') && !params.has('shotTime') && !params.has('views')) setAutoPlay(true);
 requestAnimationFrame(frame);
 
 // automation hooks for review agents
