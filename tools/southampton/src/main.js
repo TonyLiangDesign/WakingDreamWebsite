@@ -20,7 +20,7 @@ document.body.classList.toggle('capture', params.has('capture'));
 document.body.classList.toggle('views', params.has('views'));
 const quality = params.get('q') === 'low' ? 0.6 : 1;
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', logarithmicDepthBuffer: true, preserveDrawingBuffer: params.has('capture') });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'default', logarithmicDepthBuffer: true, preserveDrawingBuffer: params.has('capture') });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, params.get('pr') ? Number(params.get('pr')) : 1.5) * quality);
 renderer.setSize(window.innerWidth, window.innerHeight, false);
 renderer.shadowMap.enabled = true;
@@ -478,5 +478,14 @@ window.__app = {
 }
 init().catch((error) => {
   console.error('Unable to load Southampton demo', error);
-  document.querySelector('.loading-status').textContent = 'Unable to load the 3D scene. Please try a browser with WebGL support.';
+  const status = document.querySelector('.loading-status');
+  const gpuError = /WebGL|context|ShaderPrecisionFormat/i.test(error.message || '');
+  status.textContent = gpuError
+    ? 'The graphics connection was interrupted. Reload to try again.'
+    : 'The scene could not finish loading. Reload to try again.';
+  const retry = document.createElement('button');
+  retry.className = 'loading-retry';
+  retry.textContent = 'Reload scene';
+  retry.addEventListener('click', () => location.reload());
+  status.after(retry);
 });

@@ -113,3 +113,5 @@ body.views #camera-picker { display: flex; animation: programme-in .18s ease-out
 .programme-subtitle { margin: 8px 0 0; font: italic 14px/1.3 var(--serif); color: var(--muted-ink); }
 
 body.capture .demo-back, body.capture #view-hud, body.capture #camera-picker { display: none !important; }
+
+.loading-retry { margin-top: 24px; padding: 10px 20px; color: var(--ink); background: var(--paper); border: 1px solid var(--hairline); cursor: pointer; font: 16px var(--serif); }
