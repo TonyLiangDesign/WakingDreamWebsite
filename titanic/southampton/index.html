@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Southampton 1912 · Interactive Demo | Waking Dream Technology</title>
+  <meta name="description" content="Explore an animated 3D reconstruction of Southampton harbour on 10 April 1912. An early Back to Titanic demo by Waking Dream Technology." />
+  <script type="module" crossorigin src="/titanic/southampton/assets/index-C81nDRKy.js"></script>
+  <link rel="modulepreload" crossorigin href="/titanic/southampton/assets/vendor-BRItJkVF.js">
+  <link rel="stylesheet" crossorigin href="/titanic/southampton/assets/index-BN-coGs9.css">
+</head>
+<body>
+  <a class="demo-back" href="/titanic/">← Back to Titanic <span>· Interactive demo</span></a>
+  <noscript><p class="demo-message">This 3D demo requires JavaScript. <a href="/titanic/">Return to Titanic</a></p></noscript>
+  <canvas id="view"></canvas>
+  <div id="letterbox"></div>
+  <div id="slate">Southampton · White Star Dock<b>10 April 1912 · 11:52</b></div>
+  <div id="loading"><span class="loading-place">Southampton</span><span class="loading-date">10 April 1912</span><span class="loading-status">Preparing the harbour…</span></div>
+  <section id="camera-picker" aria-labelledby="camera-heading">
+    <header class="camera-heading">
+      <p class="programme-kicker">White Star Dock · Southampton</p>
+      <h1 id="camera-heading">R.M.S. Titanic</h1>
+      <p class="programme-subtitle">Views of the Harbour</p>
+      <p class="programme-date">10 April 1912 <span aria-hidden="true">·</span> <span id="camera-count"></span></p>
+      <button id="camera-close" aria-label="Close view list" title="Close · Esc"><kbd>Esc</kbd></button>
+      <svg class="programme-ornament" viewBox="0 0 260 14" aria-hidden="true"><path d="M0 7h94c11 0 13-5 21-5s9 10 15 10 7-10 15-10 10 5 21 5h94M102 10c10 0 13-5 19-5m18 0c6 0 9 5 19 5"/><path d="m130 3 4 4-4 4-4-4z"/></svg>
+    </header>
+    <div id="camera-panel">
+      <select id="camera-select" hidden aria-hidden="true" tabindex="-1"></select>
+      <div id="camera-list" aria-label="Available camera views"></div>
+      <p id="camera-description" aria-live="polite"></p>
+      <div class="camera-actions">
+        <button id="camera-prev" aria-label="Previous view" title="Previous view · Left arrow"><kbd>←</kbd></button>
+        <button id="camera-play">Play shot <span aria-hidden="true">▷</span></button>
+        <button id="camera-next" aria-label="Next view" title="Next view · Right arrow"><kbd>→</kbd></button>
+      </div>
+      <p class="programme-footer">R.M.S. Titanic <span aria-hidden="true">·</span> A morning in port</p>
+    </div>
+  </section>
+  <nav id="view-hud" aria-label="Camera shortcuts">
+    <div class="hud-camera">
+      <button id="hud-prev" aria-label="Previous camera view" title="Previous view · Left arrow"><kbd>←</kbd></button>
+      <button id="hud-shot" aria-live="polite" aria-expanded="false" aria-controls="camera-picker" title="View list · V"><kbd>V</kbd><span id="hud-shot-label"></span></button>
+      <button id="hud-next" aria-label="Next camera view" title="Next view · Right arrow"><kbd>→</kbd></button>
+    </div>
+    <span class="divider" aria-hidden="true">·</span>
+    <button id="autoplay-toggle" aria-pressed="false" title="Auto play views · A"><kbd>A</kbd><span id="autoplay-label">Auto play</span></button>
+    <span class="divider" aria-hidden="true">·</span>
+    <button id="film-toggle" aria-pressed="false"><kbd>O</kbd>Vintage lens <span id="film-status">Off</span></button>
+  </nav>
+  <div id="help"><kbd>V</kbd>views · <kbd>A</kbd>auto play · <kbd>1–9</kbd>shots · <kbd>C</kbd>cinema bars · <kbd>H</kbd>hide UI · <kbd>Space</kbd>play/pause · <kbd>F</kbd>free-fly (<kbd>WASD</kbd>/<kbd>QE</kbd>) · <kbd>P</kbd>screenshot</div>
+</body>
+</html>

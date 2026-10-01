@@ -10,7 +10,7 @@
     />
     <meta property="og:title" content="Back to Titanic" />
     <meta property="og:description" content="History, felt as a place. An immersive Titanic project in development, centred on exploration and the experience of being aboard." />
-    <meta property="og:image" content="https://wakingdream.co.nz/assets/titanic-ship.jpg" />
+    <meta property="og:image" content="https://wakingdream.co.nz/assets/titanic-quay-archive.webp" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -18,6 +18,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/styles.css?v=20260924-unreal-first" />
+    <link rel="stylesheet" href="/titanic/titanic.css?v=20261001-dark-paper-buttons" />
   </head>
   <body data-product="titanic">
     <header class="nav" id="nav">
@@ -38,126 +39,37 @@
       <section class="hero">
         <div class="wrap">
           <div>
-            <p class="eyebrow">Back to Titanic · Project in development</p>
-            <h1>History, felt as a place.</h1>
-            <p class="lede">
-              An immersive project in development, shaped around the experience of being aboard Titanic.
-              Through its spaces, light and atmosphere, we are exploring a more personal encounter with the past.
-            </p>
+            <div class="hero-title"><h1>Back to Titanic.</h1><p class="hero-caption">An immersive 3D journey into Titanic’s world, currently in development.</p></div>
             <div class="hero-actions">
-              <a class="btn btn-accent" href="#follow">Follow the project</a>
-              <a class="link" href="#experience">The experience</a>
+              <a class="btn btn-accent" href="/titanic/southampton/?shot=quayLevel&amp;film=archive">Enter Southampton →</a>
             </div>
           </div>
           <div class="hero-media">
-            <img src="/assets/titanic-ship.jpg" alt="RMS Titanic under way, starboard side, from the current reconstruction" />
+            <a href="/titanic/southampton/?shot=quayLevel&amp;film=archive" aria-label="Explore Titanic from the quay in 3D"><img src="/assets/titanic-quay-archive.webp" alt="Vintage-style view of Titanic alongside the Southampton quay" width="1600" height="900" /></a>
           </div>
         </div>
       </section>
 
-      <section class="about" id="experience">
+      <section class="titanic-gallery" aria-label="Views of Titanic">
         <div class="wrap">
-          <div>
-            <p class="eyebrow">The experience</p>
-            <h2>Space. Atmosphere. Presence.</h2>
-          </div>
-          <div>
-            <p>
-              A view across the open deck. The change of light as you step inside.
-              The scale of a staircase, understood by standing at its foot.
-              These are the moments we want to make possible.
-            </p>
-            <p>
-              Our aim is to make history tangible through the act of exploring,
-              with room for curiosity, quiet observation and reflection.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section class="features">
-        <div class="wrap">
-          <article class="feature">
-            <div class="feature-text">
-              <p class="eyebrow">Exploration</p>
-              <h2>A sense of being there.</h2>
-              <p>
-                The experience is being designed around movement and observation: stepping onto a deck,
-                following a passage, pausing in a room. Each space is part of a larger journey,
-                with time to notice the details along the way.
-              </p>
-            </div>
-            <div class="feature-media">
-              <img src="/assets/titanic-boatdeck.jpg" alt="Looking aft along the boat deck between a ventilator cowl and the lifeboats" />
-            </div>
-          </article>
-
-          <article class="feature flip">
-            <div class="feature-text">
-              <p class="eyebrow">Reconstruction</p>
-              <h2>Built with care for the past.</h2>
-              <p>
-                The reconstruction takes shape from the ship's proportions to its rooms and fittings.
-                Historical research guides the work, while spatial detail gives it a human scale.
-                The images shown here are from an evolving prototype; spaces and details remain in development.
-              </p>
-            </div>
-            <div class="feature-media">
-              <img src="/assets/titanic-stair.jpg" alt="Looking down a stairwell toward the lower deck in the reconstruction" />
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="log" id="log">
-        <div class="wrap">
-          <p class="eyebrow">Work in progress</p>
-          <h2>A world taking shape.</h2>
-          <p>
-            Early views of the reconstruction, from the ship's outline to the spaces within.
-            The project is not yet open to the public; a release date has not been announced.
-          </p>
-          <div class="log-entry">
-            <div class="log-when">15 Sep 2026<br />Week 1</div>
-            <div>
-              <h3>Setting the scale.</h3>
-              <p>
-                The early prototype brings the exterior and interior into a shared sense of scale.
-                A first route connects the boat deck and dining saloon, establishing a starting point
-                for the experience.
-              </p>
-              <div class="log-pair">
-                <figure><img src="/assets/titanic-ship.jpg" alt="Whole ship, starboard, week 1" /><figcaption>Whole · starboard profile</figcaption></figure>
-                <figure><img src="/assets/titanic-boatdeck.jpg" alt="Boat deck detail, week 1" /><figcaption>Detail · boat deck, forward</figcaption></figure>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="cta" id="follow">
-        <div class="wrap">
-          <div>
-            <p class="eyebrow">Follow</p>
-            <h2>Follow the journey.</h2>
-            <p>
-              Receive occasional project updates and news of future opportunities to experience it.
-            </p>
-          </div>
-          <div class="card">
-            <p class="card-title">Project updates</p>
-            <form class="form" action="https://formsubmit.co/tony@wakingdream.co.nz" method="post">
-              <input type="hidden" name="_subject" value="Back to Titanic follower" />
-              <input type="hidden" name="_captcha" value="false" />
-              <input type="hidden" name="_template" value="table" />
-              <input type="hidden" name="product" value="Back to Titanic" />
-              <input type="hidden" name="_next" value="https://wakingdream.co.nz/thank-you.html?p=titanic" />
-
-              <label for="email">Email</label>
-              <input id="email" name="email" type="email" autocomplete="email" required />
-
-              <button class="btn btn-accent" type="submit">Keep me updated</button>
-            </form>
+          <div class="gallery-heading"><h2>From harbour to ship.</h2><p>An evolving reconstruction</p></div>
+          <div class="gallery-grid">
+            <figure>
+              <a class="gallery-image" href="/titanic/southampton/?shot=orbit&amp;film=off" aria-label="Explore Southampton harbour in 3D"><img src="/assets/titanic-orbit-colour.webp" alt="Colour panorama of Titanic at Southampton" width="1280" height="720" loading="lazy" /></a>
+              <figcaption><span>At the berth</span><a href="/titanic/southampton/?shot=orbit&amp;film=off">Explore this view ↗</a></figcaption>
+            </figure>
+            <figure>
+              <div class="gallery-image"><img src="/assets/titanic-ship.jpg" alt="RMS Titanic, starboard profile" loading="lazy" /></div>
+              <figcaption><span>The ship in profile</span><span class="gallery-note">Starboard</span></figcaption>
+            </figure>
+            <figure>
+              <div class="gallery-image"><img src="/assets/titanic-boatdeck.jpg" alt="Looking aft along the boat deck" loading="lazy" /></div>
+              <figcaption><span>Along the boat deck</span><span class="gallery-note">Looking aft</span></figcaption>
+            </figure>
+            <figure>
+              <div class="gallery-image"><img src="/assets/titanic-stair.jpg" alt="Looking down the stairwell toward the lower deck" loading="lazy" /></div>
+              <figcaption><span>Between decks</span><span class="gallery-note">The stairwell</span></figcaption>
+            </figure>
           </div>
         </div>
       </section>

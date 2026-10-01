@@ -116,3 +116,28 @@ Switch-over, in this order:
 Until step 2 is done the site is served at `onechair.ai` with the new design, and the form
 redirects to `wakingdream.co.nz/thank-you.html` will bounce through the old forward. That is
 the expected transition state.
+
+## Southampton browser demo
+
+`/titanic/southampton/` is the compiled Three.js demo linked from the Titanic page.
+Source and pinned dependencies live in `tools/southampton/`. To update the published files:
+
+```bash
+cd tools/southampton
+npm ci
+npm run build
+```
+
+Commit both source changes and the generated `titanic/southampton/` files. GitHub Pages
+serves the generated files without a server or build step. The demo includes animated
+camera shots, orbit controls and a return link to Titanic.
+
+The scene initialises inside an async function rather than a top-level await to
+avoid circular waits between lazy scene modules in production bundles. Optional
+GLB loading is disabled by default; enable with `VITE_TITANIC_GLB=true` only when
+`public/assets/titanic.glb` is supplied.
+
+Titanic uses a wide vintage-lens capture of shot 6 (`quayLevel`) as its hero,
+a colour capture of shot 12 (`orbit`), and the original ship, boat-deck and stairwell
+images. Capture with `?shot=…&film=archive|off&hold&still&capture`; `capture` hides UI.
+The page retains the studio dark theme, with paper-yellow demo buttons and large headings.

@@ -1,0 +1,49 @@
+/* Keep the studio's dark page and use the demo's paper colour for controls. */
+body[data-product="titanic"] { --accent: #f0e9d8; }
+body[data-product="titanic"] .btn {
+  position: relative;
+  background: #f0e9d8;
+  border: 1px solid #b7a78a;
+  border-radius: 1px;
+  color: #24343d;
+  font-family: "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  font-size: 1rem;
+  letter-spacing: .025em;
+  text-transform: none;
+}
+body[data-product="titanic"] .btn::before { content: ""; position: absolute; inset: 3px; border: 1px solid #b7a78a90; pointer-events: none; }
+body[data-product="titanic"] .btn.btn-accent { color: #24343d; border-color: #b7a78a; }
+body[data-product="titanic"] .btn:hover { background: #ded3bd; color: #24343d; }
+body[data-product="titanic"] .hero h1 { font-size: clamp(2.8rem, 6vw, 5rem); }
+body[data-product="titanic"] .feature h2 { font-size: clamp(2rem, 4vw, 3.2rem); }
+body[data-product="titanic"] .hero-media a,
+body[data-product="titanic"] .feature-media a { display: block; }
+body[data-product="titanic"] .hero-media a:hover,
+body[data-product="titanic"] .feature-media a:hover { opacity: .9; }
+
+body[data-product="titanic"] .hero .wrap { grid-template-columns: 1fr; gap: 32px; }
+body[data-product="titanic"] .hero .wrap > div:first-child { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; }
+body[data-product="titanic"] .hero h1 { margin: 0; }
+body[data-product="titanic"] .hero .hero-actions { margin: 0; }
+body[data-product="titanic"] .hero-media { order: 0; }
+
+.titanic-gallery { padding: 48px 0 80px; border-top: 1px solid var(--line); }
+.gallery-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 28px; }
+.gallery-heading h2 { margin: 0; font-size: clamp(1.4rem, 2.4vw, 2rem); }
+.gallery-heading p { margin: 0; font-size: .68rem; color: var(--text-mute); letter-spacing: .06em; }
+.gallery-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px 24px; }
+.gallery-grid figure { margin: 0; min-width: 0; }
+.gallery-image { display: block; aspect-ratio: 16 / 10; overflow: hidden; background: #121213; border: 1px solid var(--line); }
+.gallery-image img { width: 100%; height: 100%; object-fit: cover; }
+.gallery-grid figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-top: 12px; font-size: .83rem; }
+.gallery-note, .gallery-grid figcaption a { font-size: .66rem; color: var(--text-mute); }
+.gallery-grid figcaption a { color: #f0e9d8; }
+.gallery-grid a:hover { opacity: .85; }
+@media (max-width: 600px) {
+  .titanic-gallery { padding: 32px 0 48px; }
+  .gallery-heading { display: block; }
+  .gallery-heading p { margin-top: 8px; }
+  .gallery-grid { grid-template-columns: 1fr; gap: 28px; }
+}
+
+body[data-product="titanic"] .hero-caption { margin: 14px 0 0; font-size: .95rem; line-height: 1.6; max-width: 48ch; color: var(--text-soft); }
