@@ -7,7 +7,7 @@
   <meta property="og:type" content="article">
   <meta property="og:title" content="Character Motion from Video | Tony Liang">
   <meta property="og:description" content="An AI-assisted dog and MetaHuman animation case study: camera matching, quadruped rigging, stair contact, and an editable Unreal Engine pipeline.">
-  <meta property="og:image" content="https://wakingdream.co.nz/unreal-visualisation/character-motion/assets/dog-motion.png">
+  <meta property="og:image" content="https://wakingdream.co.nz/unreal-visualisation/character-motion/assets/dog-leash-preview-poster.jpg">
   <meta property="og:url" content="https://wakingdream.co.nz/unreal-visualisation/character-motion/">
   <link rel="canonical" href="https://wakingdream.co.nz/unreal-visualisation/character-motion/">
   <title>Character Motion from Video | Waking Dream Technology</title>
@@ -34,7 +34,8 @@
     .meta strong { color:var(--ink); font-weight:650; }
     figure { position:relative; margin:0; }
     .hero { background:#000; border-radius:10px; overflow:hidden; }
-    .hero img { width:100%; max-height:580px; object-fit:contain; }
+    .hero video { display:block; width:100%; aspect-ratio:16/9; background:#000; }
+    .preview-caption { margin:12px 0 0; color:var(--muted); font-size:.83rem; }
     figcaption { position:absolute; left:14px; bottom:14px; max-width:calc(100% - 28px); margin:0; color:#fff; font-size:.72rem; font-weight:650; line-height:1.3; letter-spacing:.02em; }
     .three-view figcaption { top:4px; bottom:auto; color:#171a1c; }
     .rule { border-top:1px solid var(--line); }
@@ -99,7 +100,8 @@
         <p class="lead">This is an AI-assisted workflow for turning filmed dog and handler motion into editable quadruped and MetaHuman animation for Unreal Engine. I am developing it as a reusable animation production capability: as large language models become more capable and the cost per token falls, more of the pipeline can be automated while artists retain control over performance and quality.</p>
         <div class="meta"><span><strong>Role</strong> Quadruped rigging, MetaHuman animation &amp; pipeline</span><span><strong>Tools</strong> Blender, Unreal Engine, Python</span><span><strong>Models</strong> GPT-6 Astra, Seedance 2.0, Tripo v3.1</span><span><strong>Year</strong> 2026</span></div>
       </div>
-      <figure class="hero"><img src="assets/dog-motion.png" alt="Rendered Labrador in a walking pose with one front paw raised"><figcaption>Blender · Editable quadruped animation</figcaption></figure>
+      <figure class="hero"><video controls autoplay muted loop playsinline preload="metadata" poster="assets/dog-leash-preview-poster.jpg" aria-label="Animation preview of a dog climbing stairs with a simulated leash and no visible handler"><source src="assets/dog-leash-preview.mp4" type="video/mp4">Your browser does not support HTML video.</video></figure>
+      <p class="preview-caption">Dog and simulated leash · Animation preview. The MetaHuman handler is in progress.</p>
     </div>
 
     <section class="rule"><div class="wrap section-head"><div class="label">01 / The goal</div><div><h2>Testing an editable video-to-animation workflow</h2><p class="summary">The question was whether AI could accelerate the early reference and asset stages while leaving character motion editable, inspectable, and suitable for an Unreal Engine pipeline.</p><p>I started from filmed motion of a dog and its handler on stairs. A generated side-view sequence gave me a clearer reference for the dog, while the human performance is being matched to a MetaHuman character. I treat generated frames as a guide to review, not as measured 3D motion.</p><a class="source-footage" href="https://www.pond5.com/stock-footage/item/79772580-boy-labrador-dog-leash-go-upstairs-green-park-sundown-rapid" target="_blank" rel="noopener noreferrer" aria-label="View original footage by samuraisunshine on Pond5 (opens in a new tab)"><span><strong>View original filmed reference</strong><small>Pond5 · samuraisunshine · Item 79772580</small></span><span class="source-arrow" aria-hidden="true">↗</span></a></div></div></section>
