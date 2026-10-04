@@ -9,6 +9,7 @@ Static studio site with two listed project pages, a selected-work page and an un
 /titanic/         Back to Titanic — immersive project in development; experience + prototype views
 /about/           studio
 /unreal-visualisation/  automotive, Reebok IMPACT, Metahuman, Digital Medal and VintageUI case studies
+/unreal-visualisation/character-motion/  AI-assisted dog and MetaHuman animation case study
 /thank-you.html   form landing; `?p=onechair|tessera|titanic` picks the copy
 /assets/          images
 /assets/unreal/   optimised WebP images, posters, WebM and MP4 videos
@@ -31,6 +32,11 @@ python3 -m http.server 8080
 Then open http://localhost:8080/ (opening `index.html` directly will not resolve `/styles.css`).
 
 ## Unreal Visualisation media
+
+The Character Motion from Video case study is a static child page at
+`/unreal-visualisation/character-motion/`. The Unreal Visualisation page links to it
+immediately after the MetaHuman videos. The page uses self-contained styles and
+relative image paths; its canonical URL and social preview use the production domain.
 
 Reebok IMPACT credits Reebok and Futureverse. Its four supplied square renders
 appear in a square carousel with four selection dots, matching the automotive controls.

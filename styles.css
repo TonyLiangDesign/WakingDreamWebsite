@@ -207,6 +207,10 @@ body[data-product="unreal"] { --bg: #000; background: #000; }
 .work-preview .wrap { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(24px, 5vw, 64px); align-items: center; }
 .work-preview img { width: 100%; }
 .work-preview a:hover .link { color: var(--text); }
+.character-motion-preview { padding-top: clamp(64px, 9vw, 120px); }
+.character-motion-preview .wrap { border-top: 1px solid var(--line); padding-top: clamp(36px, 5vw, 64px); }
+.character-motion-preview img { border-radius: 3px; background: #161616; }
+.character-motion-preview .link { display: inline-block; margin-top: 12px; }
 
 @media (max-width: 640px) {
   .work-preview .wrap { grid-template-columns: 1fr; }
