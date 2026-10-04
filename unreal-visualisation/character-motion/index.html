@@ -35,9 +35,8 @@
     figure { position:relative; margin:0; }
     .hero { background:#000; border-radius:10px; overflow:hidden; }
     .hero img { width:100%; max-height:580px; object-fit:contain; }
-    figcaption { position:absolute; left:14px; bottom:14px; max-width:calc(100% - 28px); margin:0; color:#fff; font-size:.72rem; font-weight:650; line-height:1.3; letter-spacing:.02em; text-shadow:0 1px 3px rgba(0,0,0,.95),0 0 8px rgba(0,0,0,.65); }
-    .three-view figcaption { top:4px; bottom:auto; color:#171a1c; text-shadow:none; }
-    .chart figcaption { text-shadow:0 0 2px #111,0 1px 2px #111,0 0 6px #111; }
+    figcaption { position:absolute; left:14px; bottom:14px; max-width:calc(100% - 28px); margin:0; color:#fff; font-size:.72rem; font-weight:650; line-height:1.3; letter-spacing:.02em; }
+    .three-view figcaption { top:4px; bottom:auto; color:#171a1c; }
     .rule { border-top:1px solid var(--line); }
     section { padding:76px 0; }
     .section-head { display:grid; grid-template-columns:240px 1fr; gap:48px; align-items:start; }
@@ -45,6 +44,11 @@
     h3 { font-size:1.15rem; letter-spacing:-.02em; line-height:1.25; margin:0 0 9px; }
     p { max-width:690px; }
     .summary { font-size:1.12rem; line-height:1.6; }
+    .source-footage { position:relative; display:block; max-width:690px; margin-top:28px; border-radius:7px; overflow:hidden; }
+    .source-footage img { width:100%; height:auto; }
+    .source-footage span { position:absolute; top:14px; left:14px; color:#fff; font-size:.72rem; font-weight:650; letter-spacing:.02em; }
+    .source-footage:hover img { opacity:.88; }
+    .source-footage:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
     .steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:34px 46px; margin-top:42px; }
     .step { border-top:1px solid var(--line); padding-top:18px; }
     .step .num { color:var(--accent); font-size:.78rem; font-weight:750; letter-spacing:.08em; }
@@ -90,13 +94,13 @@
       <div class="intro">
         <div class="eyebrow">Independent R&amp;D · Case study · Work in progress</div>
         <h1>Character motion<br>from video</h1>
-        <p class="lead">I am building an AI-assisted workflow that turns filmed dog and handler motion into editable quadruped and MetaHuman animation for Unreal Engine. It combines generated references, camera matching, rig refinement, and frame-by-frame motion review.</p>
+        <p class="lead">This is an AI-assisted workflow for turning filmed dog and handler motion into editable quadruped and MetaHuman animation for Unreal Engine. I am developing it as a reusable animation production capability: as large language models become more capable and the cost per token falls, more of the pipeline can be automated while artists retain control over performance and quality.</p>
         <div class="meta"><span><strong>Role</strong> Quadruped rigging, MetaHuman animation &amp; pipeline</span><span><strong>Tools</strong> Blender, Unreal Engine, Python</span><span><strong>Models</strong> GPT-6 Astra, Seedance 2.0, Tripo v3.1</span><span><strong>Year</strong> 2026</span></div>
       </div>
       <figure class="hero"><img src="assets/dog-motion.png" alt="Rendered Labrador in a walking pose with one front paw raised"><figcaption>Blender · Editable quadruped animation</figcaption></figure>
     </div>
 
-    <section class="rule"><div class="wrap section-head"><div class="label">01 / The goal</div><div><h2>Testing an editable video-to-animation workflow</h2><p class="summary">The question was whether AI could accelerate the early reference and asset stages while leaving character motion editable, inspectable, and suitable for an Unreal Engine pipeline.</p><p>I started from filmed motion of a dog and its handler on stairs. A generated side-view sequence gave me a clearer reference for the dog, while the human performance is being matched to a MetaHuman character. I treat generated frames as a guide to review, not as measured 3D motion.</p></div></div></section>
+    <section class="rule"><div class="wrap section-head"><div class="label">01 / The goal</div><div><h2>Testing an editable video-to-animation workflow</h2><p class="summary">The question was whether AI could accelerate the early reference and asset stages while leaving character motion editable, inspectable, and suitable for an Unreal Engine pipeline.</p><p>I started from filmed motion of a dog and its handler on stairs. A generated side-view sequence gave me a clearer reference for the dog, while the human performance is being matched to a MetaHuman character. I treat generated frames as a guide to review, not as measured 3D motion.</p><a class="source-footage" href="https://www.pond5.com/stock-footage/item/79772580-boy-labrador-dog-leash-go-upstairs-green-park-sundown-rapid" target="_blank" rel="noopener noreferrer" aria-label="View original footage by samuraisunshine on Pond5 (opens in a new tab)"><img src="assets/original-pond5-footage.png" alt="Watermarked Pond5 footage of a handler and Labrador approaching outdoor steps" loading="lazy"><span>Original filmed reference · Pond5 ↗</span></a></div></div></section>
 
     <section class="showcase"><div class="wrap"><div class="label">02 / Character build</div><h2>From multiview reference to a usable rig</h2><p>The dog began as generated multiview reference and a 3D model. I refined the quadruped rig, skin weights, paw joints, body proportions, and deformation through repeated pose checks.</p><figure class="three-view"><img src="assets/dog-three-view.png" alt="Front, side, and rear reference views of a Labrador"><figcaption>GPT ImageGen 2 · Three-view reference</figcaption></figure><figure class="model-preview"><img src="assets/tripo-model-preview.png" alt="Tripo-generated 3D Labrador model preview rendered in Blender"><figcaption>Tripo v3.1 · 3D model, Blender preview</figcaption></figure></div></section>
 
@@ -104,7 +108,7 @@
 
     <section class="showcase"><div class="wrap proof"><div><div class="label">04 / MetaHuman · In progress</div><h2>Bringing the handler into the same scene</h2><p>I am matching the handler's stair motion to a MetaHuman character, including foot contact, pelvis motion, hand position, and leash interaction. The dog and MetaHuman now share an editable scene for timing and composition review.</p><p class="note">The MetaHuman animation has been reimported and checked on the original MetaHuman skeleton in a separate Unreal Engine test project.</p></div><figure><img src="assets/metahuman-shared-scene.png" alt="Work-in-progress shared scene with a dog, MetaHuman handler, leash, and stairs"><figcaption>Blender · Dog and MetaHuman scene</figcaption></figure></div></section>
 
-    <section class="rule"><div class="wrap proof"><div><div class="label">05 / Measured iteration</div><h2>Use the comparison to make a decision</h2><p>In one intermediate gait pass, average error at three visible back-line landmarks fell from 16.4 to 5.7 pixels while protected paw motion was preserved. I checked the same frames visually as well as through plotted body and paw curves.</p><p class="note">These are image-space measurements for this shot, not 3D ground truth or a final quality score.</p></div><figure class="chart"><img src="assets/gait-review.png" alt="Gait review charts comparing reference and animation body contours and paw height"><figcaption>Python · Gait review</figcaption></figure></div></section>
+    <section class="rule"><div class="wrap proof"><div><div class="label">05 / Measured iteration</div><h2>Use the comparison to make a decision</h2><p>In one intermediate gait pass, average error at three visible back-line landmarks fell from 16.4 to 5.7 pixels while protected paw motion was preserved. I checked the same frames visually as well as through plotted body and paw curves.</p><p class="note">These are image-space measurements for this shot, not 3D ground truth or a final quality score.</p></div><figure><img src="assets/gait-review.png" alt="Gait review charts comparing reference and animation body contours and paw height"><figcaption>Python · Gait review</figcaption></figure></div></section>
 
     <section class="status"><div class="wrap"><div class="label">Pipeline &amp; outlook</div><div><h2>AI collaboration needs an editable result</h2><p>Generative models supplied candidate views and motion. GPT-6 Astra assisted with Blender and Python tooling for repetitive setup and diagnostics. I chose the references, directed the animation, corrected anatomy and contact, and approved each version through visual and measured review.</p><p>This points to a practical production loop: generate a candidate, build an editable scene, test it against clear constraints, and make a directed correction. The dog can be exported to Unreal Engine as a Geometry Cache or rigged Skeletal Mesh; the MetaHuman animation has a validated FBX path back to its Unreal skeleton.</p></div></div></section>
   </main>
