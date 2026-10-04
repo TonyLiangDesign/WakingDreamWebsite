@@ -44,10 +44,12 @@
     h3 { font-size:1.15rem; letter-spacing:-.02em; line-height:1.25; margin:0 0 9px; }
     p { max-width:690px; }
     .summary { font-size:1.12rem; line-height:1.6; }
-    .source-footage { position:relative; display:block; max-width:690px; margin-top:28px; border-radius:7px; overflow:hidden; }
-    .source-footage img { width:100%; height:auto; }
-    .source-footage span { position:absolute; top:14px; left:14px; color:#fff; font-size:.72rem; font-weight:650; letter-spacing:.02em; }
-    .source-footage:hover img { opacity:.88; }
+    .source-footage { display:flex; align-items:center; justify-content:space-between; gap:24px; max-width:690px; margin-top:28px; padding:19px 22px; border:1px solid var(--line); border-radius:7px; color:inherit; text-decoration:none; }
+    .source-footage strong, .source-footage small { display:block; }
+    .source-footage strong { font-size:.92rem; }
+    .source-footage small { margin-top:4px; color:var(--muted); font-size:.76rem; }
+    .source-footage .source-arrow { font-size:1.25rem; line-height:1; }
+    .source-footage:hover { border-color:var(--accent); }
     .source-footage:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
     .steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:34px 46px; margin-top:42px; }
     .step { border-top:1px solid var(--line); padding-top:18px; }
@@ -100,7 +102,7 @@
       <figure class="hero"><img src="assets/dog-motion.png" alt="Rendered Labrador in a walking pose with one front paw raised"><figcaption>Blender · Editable quadruped animation</figcaption></figure>
     </div>
 
-    <section class="rule"><div class="wrap section-head"><div class="label">01 / The goal</div><div><h2>Testing an editable video-to-animation workflow</h2><p class="summary">The question was whether AI could accelerate the early reference and asset stages while leaving character motion editable, inspectable, and suitable for an Unreal Engine pipeline.</p><p>I started from filmed motion of a dog and its handler on stairs. A generated side-view sequence gave me a clearer reference for the dog, while the human performance is being matched to a MetaHuman character. I treat generated frames as a guide to review, not as measured 3D motion.</p><a class="source-footage" href="https://www.pond5.com/stock-footage/item/79772580-boy-labrador-dog-leash-go-upstairs-green-park-sundown-rapid" target="_blank" rel="noopener noreferrer" aria-label="View original footage by samuraisunshine on Pond5 (opens in a new tab)"><img src="assets/original-pond5-footage.png" alt="Watermarked Pond5 footage of a handler and Labrador approaching outdoor steps" loading="lazy"><span>Original filmed reference · Pond5 ↗</span></a></div></div></section>
+    <section class="rule"><div class="wrap section-head"><div class="label">01 / The goal</div><div><h2>Testing an editable video-to-animation workflow</h2><p class="summary">The question was whether AI could accelerate the early reference and asset stages while leaving character motion editable, inspectable, and suitable for an Unreal Engine pipeline.</p><p>I started from filmed motion of a dog and its handler on stairs. A generated side-view sequence gave me a clearer reference for the dog, while the human performance is being matched to a MetaHuman character. I treat generated frames as a guide to review, not as measured 3D motion.</p><a class="source-footage" href="https://www.pond5.com/stock-footage/item/79772580-boy-labrador-dog-leash-go-upstairs-green-park-sundown-rapid" target="_blank" rel="noopener noreferrer" aria-label="View original footage by samuraisunshine on Pond5 (opens in a new tab)"><span><strong>View original filmed reference</strong><small>Pond5 · samuraisunshine · Item 79772580</small></span><span class="source-arrow" aria-hidden="true">↗</span></a></div></div></section>
 
     <section class="showcase"><div class="wrap"><div class="label">02 / Character build</div><h2>From multiview reference to a usable rig</h2><p>The dog began as generated multiview reference and a 3D model. I refined the quadruped rig, skin weights, paw joints, body proportions, and deformation through repeated pose checks.</p><figure class="three-view"><img src="assets/dog-three-view.png" alt="Front, side, and rear reference views of a Labrador"><figcaption>GPT ImageGen 2 · Three-view reference</figcaption></figure><figure class="model-preview"><img src="assets/tripo-model-preview.png" alt="Tripo-generated 3D Labrador model preview rendered in Blender"><figcaption>Tripo v3.1 · 3D model, Blender preview</figcaption></figure></div></section>
 
