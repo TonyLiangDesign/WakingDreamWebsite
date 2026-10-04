@@ -69,10 +69,22 @@
     .note { font-size:.87rem; color:var(--muted); }
     .proof { display:grid; grid-template-columns:1fr 1fr; gap:55px; align-items:start; }
     .proof img { border:1px solid var(--line); border-radius:7px; }
+    .shared-scene figcaption { color:#000; background:rgba(247,243,237,.94); padding:5px 7px; border-radius:3px; }
     .status { background:#1a1d1d; color:#fff; }
     .status .label, .status .note { color:#cbb99b; }
     .status p { color:#d6dddc; }
     .status .wrap { display:grid; grid-template-columns:240px 1fr; gap:48px; }
+    .more-projects { border-top:1px solid var(--line); }
+    .more-projects h2 { margin:12px 0 28px; font-size:1.25rem; letter-spacing:-.02em; }
+    .project-links { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
+    .project-links a { display:block; min-width:0; text-decoration:none; }
+    .project-links img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:7px; }
+    .project-links .onechair-image { object-position:center 68%; }
+    .project-links .project-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:11px; font-size:.84rem; font-weight:650; line-height:1.3; }
+    .project-links a:hover { color:var(--accent); }
+    .project-links a:hover img { opacity:.86; }
+    .project-links a:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+    .project-links .arrow { font-size:1rem; font-weight:400; }
     footer { border-top:1px solid var(--line); padding:30px 0 48px; font-size:.88rem; color:var(--muted); }
     footer .wrap { display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; }
     @media (max-width:760px) {
@@ -83,12 +95,15 @@
       .steps { gap:28px; }
       .pair { gap:10px; }
       .pair figcaption { left:8px; bottom:8px; max-width:calc(100% - 16px); font-size:.67rem; }
+      .project-links { gap:10px; }
     }
     @media (max-width:600px) {
       .pair { grid-template-columns:1fr; gap:18px; }
       .pair figure { margin-top:18px; }
       .model-pair { grid-template-columns:1fr; gap:16px; }
       .three-view figcaption { top:2px; left:8px; font-size:.62rem; }
+      .project-links { display:flex; overflow-x:auto; scroll-snap-type:x mandatory; padding-bottom:8px; }
+      .project-links a { flex:0 0 min(72vw,260px); scroll-snap-align:start; }
       .brand span { display:none; }
     }
   </style>
@@ -113,11 +128,12 @@
 
     <section class="rule"><div class="wrap"><div class="label">03 / Quadruped motion</div><h2>Problems the workflow had to solve</h2><div class="pair"><figure><img src="assets/ai-motion-reference.png" alt="AI-generated side-view reference showing a Labrador climbing stairs"><figcaption>Seedance 2.0 · Motion reference, frame 50</figcaption></figure><figure><img src="assets/frame-matched-dog.png" alt="3D Labrador character posed to match the reference at frame 50"><figcaption>Blender · Frame-matched 3D animation</figcaption></figure></div><div class="steps"><div class="step"><span class="num">01 / REFERENCE</span><h3>A generated video is not motion data</h3><p>The side-view sequence clarified the gait but did not provide reliable 3D joints or camera measurements. I reconstructed the camera and stairs and compared the character against the reference at matching frames.</p></div><div class="step"><span class="num">02 / RIGGING</span><h3>An automatic rig still needs anatomy</h3><p>The generated mesh and quadruped rig gave me a starting point. I revised paw and leg weights, neck deformation, and collar behavior so the character could carry the intended poses.</p></div><div class="step"><span class="num">03 / CONTACT</span><h3>Stairs expose foot sliding</h3><p>I refined gait timing, body motion, and paw targets with IK, then checked contacts between frames. The goal was to preserve the walk's weight transfer without stretching the limb bones.</p></div><div class="step"><span class="num">04 / VALIDATION</span><h3>Visual review needs a repeatable check</h3><p>Python-assisted landmark and clearance checks helped identify silhouette drift and paw intersections across the 24 fps sequence. I used those findings to guide the next animation pass.</p></div></div></div></section>
 
-    <section class="showcase"><div class="wrap proof"><div><div class="label">04 / MetaHuman · In progress</div><h2>Bringing the handler into the same scene</h2><p>I am matching the handler's stair motion to a MetaHuman character, including foot contact, pelvis motion, hand position, and leash interaction. The dog and MetaHuman now share an editable scene for timing and composition review.</p><p class="note">The MetaHuman animation has been reimported and checked on the original MetaHuman skeleton in a separate Unreal Engine test project.</p></div><figure><img src="assets/metahuman-shared-scene.png" alt="Work-in-progress shared scene with a dog, MetaHuman handler, leash, and stairs"><figcaption>Blender · Dog and MetaHuman scene</figcaption></figure></div></section>
+    <section class="showcase"><div class="wrap proof"><div><div class="label">04 / MetaHuman · In progress</div><h2>Bringing the handler into the same scene</h2><p>I am matching the handler's stair motion to a MetaHuman character, including foot contact, pelvis motion, hand position, and leash interaction. The dog and MetaHuman now share an editable scene for timing and composition review.</p><p class="note">The MetaHuman animation has been reimported and checked on the original MetaHuman skeleton in a separate Unreal Engine test project.</p></div><figure class="shared-scene"><img src="assets/metahuman-shared-scene.png" alt="Work-in-progress shared scene with a dog, MetaHuman handler, leash, and stairs"><figcaption>Blender · Dog and MetaHuman scene</figcaption></figure></div></section>
 
     <section class="rule"><div class="wrap proof"><div><div class="label">05 / Measured iteration</div><h2>Use the comparison to make a decision</h2><p>In one intermediate gait pass, average error at three visible back-line landmarks fell from 16.4 to 5.7 pixels while protected paw motion was preserved. I checked the same frames visually as well as through plotted body and paw curves.</p><p class="note">These are image-space measurements for this shot, not 3D ground truth or a final quality score.</p></div><figure><img src="assets/gait-review.png" alt="Gait review charts comparing reference and animation body contours and paw height"><figcaption>Python · Gait review</figcaption></figure></div></section>
 
     <section class="status"><div class="wrap"><div class="label">Pipeline &amp; outlook</div><div><h2>AI collaboration needs an editable result</h2><p>Generative models supplied candidate views and motion. GPT-6 Astra assisted with Blender and Python tooling for repetitive setup and diagnostics. I chose the references, directed the animation, corrected anatomy and contact, and approved each version through visual and measured review.</p><p>This points to a practical production loop: generate a candidate, build an editable scene, test it against clear constraints, and make a directed correction. The dog can be exported to Unreal Engine as a Geometry Cache or rigged Skeletal Mesh; the MetaHuman animation has a validated FBX path back to its Unreal skeleton.</p></div></div></section>
+    <section class="more-projects" aria-labelledby="more-projects-title"><div class="wrap"><div class="label">Keep exploring</div><h2 id="more-projects-title">More projects</h2><nav class="project-links" aria-label="More projects"><a href="../../titanic/"><img src="../../assets/titanic-quay-archive.webp" alt="Titanic alongside the Southampton quay" loading="lazy"><span class="project-title">Back to Titanic <span class="arrow" aria-hidden="true">↗</span></span></a><a href="../../tessera/"><img src="../../assets/tessera-mushroom.jpg" alt="A frog holding a mushroom umbrella in Tessera" loading="lazy"><span class="project-title">Tessera <span class="arrow" aria-hidden="true">↗</span></span></a><a href="../../onechair/"><img class="onechair-image" src="../../assets/Chair.jpg" alt="A director's chair under a spotlight" loading="lazy"><span class="project-title">OneChair <span class="arrow" aria-hidden="true">↗</span></span></a></nav></div></section>
   </main>
   <footer><div class="wrap"><span>© 2026 Tony Liang · Waking Dream Technology</span><a href="mailto:tonyliang.design@gmail.com">tonyliang.design@gmail.com</a></div></footer>
 </body>
