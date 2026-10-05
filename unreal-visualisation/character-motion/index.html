@@ -81,6 +81,7 @@
     .project-links { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:18px; }
     .project-links a { display:block; min-width:0; text-decoration:none; }
     .project-links img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:7px; }
+    .project-links .medal-image { object-fit:contain; background:#000; }
     .project-links .project-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:11px; font-size:.84rem; font-weight:650; line-height:1.3; }
     .project-links a:hover { color:var(--accent); }
     .project-links a:hover img { opacity:.86; }
@@ -134,7 +135,17 @@
     <section class="rule"><div class="wrap proof"><div><div class="label">05 / Measured iteration</div><h2>Use the comparison to make a decision</h2><p>In one intermediate gait pass, average error at three visible back-line landmarks fell from 16.4 to 5.7 pixels while protected paw motion was preserved. I checked the same frames visually as well as through plotted body and paw curves.</p><p class="note">These are image-space measurements for this shot, not 3D ground truth or a final quality score.</p></div><figure><img src="assets/gait-review.png" alt="Gait review charts comparing reference and animation body contours and paw height"><figcaption>Python · Gait review</figcaption></figure></div></section>
 
     <section class="status"><div class="wrap"><div class="label">Pipeline &amp; outlook</div><div><h2>AI collaboration needs an editable result</h2><p>Generative models supplied candidate views and motion. GPT-6 Astra assisted with Blender and Python tooling for repetitive setup and diagnostics. I chose the references, directed the animation, corrected anatomy and contact, and approved each version through visual and measured review.</p><p>This points to a practical production loop: generate a candidate, build an editable scene, test it against clear constraints, and make a directed correction. The dog can be exported to Unreal Engine as a Geometry Cache or rigged Skeletal Mesh; the MetaHuman animation has a validated FBX path back to its Unreal skeleton.</p></div></div></section>
-    <section class="more-projects" aria-labelledby="more-projects-title"><div class="wrap"><div class="label">Keep exploring</div><h2 id="more-projects-title">More projects</h2><nav class="project-links" aria-label="More projects"><a href="../../titanic/"><img src="../../assets/titanic-quay-archive.webp" alt="Titanic alongside the Southampton quay" loading="lazy"><span class="project-title">Back to Titanic <span class="arrow" aria-hidden="true">↗</span></span></a><a href="/unreal-visualisation/"><img src="../../assets/unreal/reebok-pump-orange-1080.webp" alt="Reebok Pump sneaker from the Unreal Engine portfolio" loading="lazy"><span class="project-title">More Unreal Projects <span class="arrow" aria-hidden="true">↗</span></span></a><a href="../../tessera/"><img src="../../assets/tessera-mushroom.jpg" alt="A frog holding a mushroom umbrella in Tessera" loading="lazy"><span class="project-title">Tessera <span class="arrow" aria-hidden="true">↗</span></span></a></nav></div></section>
+    <section class="more-projects" aria-labelledby="more-projects-title"><div class="wrap">
+      <div class="label">Keep exploring</div><h2 id="more-projects-title">More projects</h2>
+      <nav class="project-links" aria-label="More projects">
+        <a href="../../titanic/"><img src="../../assets/titanic-quay-archive.webp" alt="Titanic alongside the Southampton quay" loading="lazy"><span class="project-title">Back to Titanic <span class="arrow" aria-hidden="true">↗</span></span></a>
+        <a href="/unreal-visualisation/#reebok"><img src="../../assets/unreal/reebok-pump-orange-1080.webp" alt="Reebok Pump sneaker rendered for Reebok IMPACT" loading="lazy"><span class="project-title">Reebok IMPACT <span class="arrow" aria-hidden="true">↗</span></span></a>
+        <a href="/unreal-visualisation/#metahuman"><img src="../../assets/unreal/newsroom.webp" alt="MetaHuman presenter in a virtual newsroom" loading="lazy"><span class="project-title">MetaHuman <span class="arrow" aria-hidden="true">↗</span></span></a>
+        <a href="/unreal-visualisation/#automotive"><img src="../../assets/unreal/hyundai-steering-800.webp" alt="Hyundai SUV interior rendered in Unreal Engine" loading="lazy"><span class="project-title">Hyundai SUV <span class="arrow" aria-hidden="true">↗</span></span></a>
+        <a href="/unreal-visualisation/#medal"><img class="medal-image" src="../../assets/unreal/digital-medal.webp" alt="Animated World Triathlon digital medal" loading="lazy"><span class="project-title">Digital Medal <span class="arrow" aria-hidden="true">↗</span></span></a>
+        <a href="/unreal-visualisation/#vintage-ui"><img src="../../assets/unreal/vintage-ui.webp" alt="Vintage game settings interface" loading="lazy"><span class="project-title">VintageUI <span class="arrow" aria-hidden="true">↗</span></span></a>
+      </nav>
+    </div></section>
   </main>
   <footer><div class="wrap"><span>© 2026 Tony Liang · Waking Dream Technology</span><a href="mailto:tonyliang.design@gmail.com">tonyliang.design@gmail.com</a></div></footer>
 </body>

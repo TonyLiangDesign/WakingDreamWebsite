@@ -169,7 +169,7 @@ body[data-product="unreal"] { --bg: #000; background: #000; }
 .work-intro .lede { margin: 0 auto; font-size: clamp(1.05rem, 2vw, 1.5rem); }
 .motion-toggle { margin-top: 28px; border: 1px solid var(--line); border-radius: 999px; padding: 9px 16px; background: transparent; color: var(--text-soft); font: 0.72rem var(--font); cursor: pointer; }
 .motion-toggle:hover { border-color: var(--text-soft); color: var(--text); }
-.work-scene { margin: 0; padding-top: clamp(44px, 7vw, 96px); }
+.work-scene { margin: 0; padding-top: clamp(44px, 7vw, 96px); scroll-margin-top: 96px; }
 .scene-heading { text-align: center; margin-bottom: clamp(28px, 4vw, 56px); }
 .scene-heading h2 { font-size: clamp(2.7rem, 6.5vw, 6rem); line-height: 1.04; letter-spacing: -0.045em; font-weight: 600; margin-bottom: 18px; }
 .scene-heading p:not(.eyebrow) { font-size: clamp(1rem, 1.8vw, 1.3rem); margin: 0 auto; }
