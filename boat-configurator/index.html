@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Boat Configurator · Demo | Waking Dream Technology</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="description" content="A live 3D boat configurator demo for New Zealand boat builders: choose the hull, layout, paint, outboard and options, and share the build." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:ital,wght@0,400;0,500;0,600;1,400;1,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script type="module" crossorigin src="/boat-configurator/assets/index-D_cJ6v4Q.js"></script>
+  <link rel="modulepreload" crossorigin href="/boat-configurator/assets/vendor-Bys0QYcE.js">
+  <link rel="stylesheet" crossorigin href="/boat-configurator/assets/index-B9joLJHK.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="wordmark" href="/">Waking Dream <span>Technology</span></a>
+    <span class="pill">Boat configurator · Demo</span>
+  </header>
+
+  <main class="cfg">
+    <section class="stage" aria-label="3D view of the configured boat">
+      <canvas id="view"></canvas>
+      <div class="stage-title">
+        <p class="eyebrow">Harbour series · Plate alloy</p>
+        <h1 id="model-name">Harbour 620 Hardtop</h1>
+        <p class="mono" id="model-dims"></p>
+      </div>
+      <div class="stage-scene" role="group" aria-label="Setting">
+        <button type="button" data-scene="studio" aria-pressed="true">Studio</button>
+        <button type="button" data-scene="water" aria-pressed="false">On the water</button>
+      </div>
+      <p class="scene-note" id="scene-note" hidden>Trailer hidden on the water</p>
+      <nav class="stage-views" aria-label="Camera views">
+        <button type="button" data-view="hero">Three-quarter</button>
+        <button type="button" data-view="side">Profile</button>
+        <button type="button" data-view="bow">Bow</button>
+        <button type="button" data-view="stern">Stern</button>
+        <button type="button" data-view="top">Plan</button>
+      </nav>
+      <p class="stage-hint">Drag to turn · Scroll or pinch to zoom</p>
+      <div id="loading"><span>Building your boat…</span></div>
+      <noscript><p class="stage-hint">This configurator needs JavaScript.</p></noscript>
+    </section>
+
+    <aside class="panel">
+      <form id="config" class="steps" onsubmit="return false">
+        <fieldset class="step">
+          <legend><span class="step-n">01</span>Model</legend>
+          <div class="cards" id="opt-model"></div>
+        </fieldset>
+        <fieldset class="step">
+          <legend><span class="step-n">02</span>Layout</legend>
+          <div class="cards cards-2" id="opt-layout"></div>
+        </fieldset>
+        <fieldset class="step">
+          <legend><span class="step-n">03</span>Colour</legend>
+          <p class="sub">Topsides <b id="hull-name"></b></p>
+          <div class="swatches" id="opt-hull"></div>
+          <p class="sub"><span id="trim-label">Cabin and hardtop</span> <b id="trim-name"></b></p>
+          <div class="swatches" id="opt-trim"></div>
+        </fieldset>
+        <fieldset class="step">
+          <legend><span class="step-n">04</span>Power</legend>
+          <div class="rows" id="opt-engine"></div>
+          <p class="sub">Cowling <b id="cowling-name"></b></p>
+          <div class="swatches" id="opt-cowling"></div>
+        </fieldset>
+        <fieldset class="step">
+          <legend><span class="step-n">05</span>Options</legend>
+          <div class="rows" id="opt-options"></div>
+        </fieldset>
+      </form>
+
+      <section class="summary" aria-live="polite">
+        <div class="total"><span>Estimated price</span><strong id="total"></strong></div>
+        <details>
+          <summary>Price breakdown</summary>
+          <ul id="lines"></ul>
+        </details>
+        <div class="actions">
+          <button type="button" class="btn btn-accent" id="copy-link">Copy build link</button>
+          <button type="button" class="btn" id="save-image">Save image</button>
+        </div>
+        <button type="button" class="link-button" id="reset">Start again</button>
+        <p class="fine">Demo pricing in NZD including GST. The Harbour series is a fictional boat built to show the configurator.</p>
+      </section>
+
+      <section class="pitch">
+        <p class="eyebrow">For New Zealand boat builders</p>
+        <h2>Your boats, configured like this.</h2>
+        <p>We build configurators for your own models from CAD files or drawings. Buyers see every paint, layout, engine and option in live 3D. Enquiries arrive with the spec already chosen, and the same models give you stills for brochures and dealers.</p>
+        <form class="form" action="https://formsubmit.co/tony@wakingdream.co.nz" method="post">
+          <input type="hidden" name="_subject" value="Boat configurator enquiry" />
+          <input type="hidden" name="_captcha" value="false" />
+          <input type="hidden" name="_template" value="table" />
+          <input type="hidden" name="product" value="Boat configurator" />
+          <input type="hidden" name="_next" value="https://wakingdream.co.nz/thank-you.html?p=boat" />
+          <input type="hidden" name="build" id="build-field" />
+          <label for="name">Name</label>
+          <input id="name" name="name" autocomplete="name" required />
+          <label for="company">Boat builder or dealership</label>
+          <input id="company" name="company" autocomplete="organization" />
+          <label for="email">Email</label>
+          <input id="email" name="email" type="email" autocomplete="email" required />
+          <button class="btn btn-accent" type="submit">Talk to us</button>
+        </form>
+      </section>
+    </aside>
+  </main>
+</body>
+</html>

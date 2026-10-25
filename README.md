@@ -10,7 +10,8 @@ Static studio site with two listed project pages, a selected-work page and an un
 /about/           studio
 /unreal-visualisation/  automotive, Reebok IMPACT, Metahuman, Digital Medal and VintageUI case studies
 /unreal-visualisation/character-motion/  AI-assisted dog and MetaHuman animation case study
-/thank-you.html   form landing; `?p=onechair|tessera|titanic` picks the copy
+/boat-configurator/  unlisted Three.js boat configurator demo for NZ boat builders (noindex)
+/thank-you.html   form landing; `?p=onechair|tessera|titanic|boat` picks the copy
 /assets/          images
 /assets/unreal/   optimised WebP images, posters, WebM and MP4 videos
 /_drafts/         local-only scratch (git-ignored)
@@ -147,3 +148,23 @@ Titanic uses a wide vintage-lens capture of shot 6 (`quayLevel`) as its hero,
 a colour capture of shot 12 (`orbit`), and the original ship, boat-deck and stairwell
 images. Capture with `?shot=…&film=archive|off&hold&still&capture`; `capture` hides UI.
 The page retains the studio dark theme, with paper-yellow demo buttons and large headings.
+
+## Boat configurator demo
+
+`/boat-configurator/` is an unlisted, compiled Three.js configurator for pitching to New Zealand
+boat builders. Nothing on the site links to it and it carries `noindex, nofollow`; it is reachable
+by direct URL only. The Harbour series it configures is fictional: three plate-alloy hulls
+(5.5, 6.2 and 6.8 m), centre console or hardtop, seven topside colours, outboards up to twin
+200 hp and six options. Every part is procedural, so there are no model files. Options, demo
+NZD prices and the shareable `#m=…&l=…` build hash live in `src/config.js`. The enquiry form
+posts to formsubmit with the chosen build attached and returns to `/thank-you.html?p=boat`.
+
+Source and pinned dependencies live in `tools/boat-configurator/`. To update the published files:
+
+```bash
+cd tools/boat-configurator
+npm ci
+npm run build
+```
+
+Commit both source changes and the generated `boat-configurator/` files.
