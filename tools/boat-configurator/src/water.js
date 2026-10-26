@@ -2,37 +2,64 @@ import * as THREE from 'three';
 
 // Golden-hour harbour: one sky function shared by the dome, the water reflection and the
 // PBR environment, so paint, glass and water all agree on the light.
+//   createSky()          the dome (also rendered into the PMREM environment)
+//   createWater()        the sea: planar reflection (tReflect / uMirror, filled by scene.js),
+//                        ripple normals, Fresnel, sun glitter, horizon haze, the dark contact
+//                        band at the hull and the soft glow of the underwater lights
+//   createUnderwater()   a deep-water floor, so the clear water next to the hull has a bottom
+//   wetMaterial(m, u)    patches a boat material: a wet, darker band at the waterline and a
+//                        teal fade for anything just under the surface (u from waterlineUniforms)
 
 export const SUN_DIR = new THREE.Vector3(-0.62, 0.17, 0.77).normalize();
 
 // The waterline is sampled at this many stations from transom to bow.
 export const WL_STATIONS = 16;
 
+// Deep water colour, shared by the sea, the deep floor and the wet hull.
+const DEEP = new THREE.Color('#0d2b37');
+
 const skyUniforms = () => ({
-  uTop: { value: new THREE.Color('#4f74a3') },
-  uHorizon: { value: new THREE.Color('#e8cbb2') },
+  uTop: { value: new THREE.Color('#4d77ab') },
+  uHorizon: { value: new THREE.Color('#f3c99d') },
+  uAnti: { value: new THREE.Color('#d6c4bb') },
   uSunDir: { value: SUN_DIR.clone() },
-  uSunColor: { value: new THREE.Color('#ffd7a8') },
+  uSunColor: { value: new THREE.Color('#ffc58a') },
+  uDeep: { value: DEEP.clone() },
 });
 
 const skyChunk = /* glsl */ `
   uniform vec3 uTop;
   uniform vec3 uHorizon;
+  uniform vec3 uAnti;
   uniform vec3 uSunDir;
   uniform vec3 uSunColor;
+  uniform vec3 uDeep;
+  // Horizon colour: warm towards the sun, a cool pale grey away from it.
+  vec3 horizonColour(vec3 dir) {
+    vec2 flatDir = normalize(dir.xz + vec2(1e-5));
+    float toSun = dot(flatDir, normalize(uSunDir.xz)) * 0.5 + 0.5;
+    return mix(uAnti, uHorizon, smoothstep(0.0, 1.0, toSun));
+  }
   vec3 skyColour(vec3 dir) {
-    float h = clamp(dir.y, 0.0, 1.0);
-    vec3 col = mix(uHorizon, uTop, pow(h, 0.5));
-    col = mix(col, uHorizon * 0.55, clamp(-dir.y * 3.0, 0.0, 1.0));
+    float h = max(dir.y, 0.0);
+    vec3 hor = horizonColour(dir);
+    vec3 col = mix(hor, uTop, 1.0 - exp(-h * 3.2));
+    // Low haze band sitting on the horizon.
+    col = mix(col, hor * 1.06, exp(-h * 22.0) * 0.6);
+    // Below the horizon (seen only by the environment): the sea, mirroring a cooler sky.
+    col = mix(col, mix(mix(hor, uTop, 0.55) * 0.55, uDeep * 1.4, smoothstep(0.0, 0.12, -dir.y)), smoothstep(0.0, 0.02, -dir.y));
     float sun = max(dot(dir, uSunDir), 0.0);
-    col += uSunColor * (pow(sun, 6.0) * 0.35 + pow(sun, 48.0) * 0.7);
+    col += uSunColor * (pow(sun, 5.0) * 0.28 + pow(sun, 40.0) * 0.55 + pow(sun, 400.0) * 1.2);
     return col;
   }
+  // Tiny screen-space noise against 8-bit banding in long gradients.
+  float dither(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453) - 0.5; }
 `;
 
 export function createSky() {
   const material = new THREE.ShaderMaterial({
-    uniforms: skyUniforms(),
+    // uAlpha is 0 in the reflection pass, so the mirror image carries an occlusion mask.
+    uniforms: { ...skyUniforms(), uAlpha: { value: 1 } },
     side: THREE.BackSide,
     depthWrite: false,
     vertexShader: /* glsl */ `
@@ -45,14 +72,16 @@ export function createSky() {
       }`,
     fragmentShader: /* glsl */ `
       ${skyChunk}
+      uniform float uAlpha;
       varying vec3 vDir;
       void main() {
         vec3 dir = normalize(vDir);
         vec3 col = skyColour(dir);
-        col += uSunColor * smoothstep(0.9993, 0.9997, dot(dir, uSunDir)) * 6.0;
-        gl_FragColor = vec4(col, 1.0);
+        col += uSunColor * smoothstep(0.99955, 0.99975, dot(dir, uSunDir)) * 8.0;
+        gl_FragColor = vec4(col, uAlpha);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        gl_FragColor.rgb += dither(gl_FragCoord.xy) / 255.0;
       }`,
   });
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(1500, 48, 24), material);
@@ -61,21 +90,25 @@ export function createSky() {
   return mesh;
 }
 
-export function createWater() {
+// detail: 1 for desktop, 0 for small screens (fewer ripple octaves, one reflection tap).
+export function createWater({ detail = 1 } = {}) {
   const uniforms = {
     ...skyUniforms(),
     uTime: { value: 0 },
-    uDeep: { value: new THREE.Color('#0b2631') },
-    uGlow: { value: [new THREE.Vector3(), new THREE.Vector3()] },
+    uGlow: { value: [new THREE.Vector4(), new THREE.Vector4()] },
+    uGlowAft: { value: new THREE.Vector2(-1, 0) },
     uGlowOn: { value: 0 },
-    uGlowColor: { value: new THREE.Color('#4a9ad8') },
+    uGlowColor: { value: new THREE.Color('#5ccfe6') },
     uHullX: { value: new THREE.Vector2(-3, 6) },
     uWl: { value: new Array(WL_STATIONS + 1).fill(0) },
     tReflect: { value: null },
     uMirror: { value: new THREE.Matrix4() },
+    uTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) },
   };
   const material = new THREE.ShaderMaterial({
     uniforms,
+    transparent: true,
+    defines: { DETAIL: detail ? 1 : 0 },
     vertexShader: /* glsl */ `
       uniform mat4 uMirror;
       varying vec3 vWorld;
@@ -89,28 +122,37 @@ export function createWater() {
     fragmentShader: /* glsl */ `
       ${skyChunk}
       uniform float uTime;
-      uniform vec3 uDeep;
-      uniform vec3 uGlow[2];
+      uniform vec4 uGlow[2];
+      uniform vec2 uGlowAft;
       uniform float uGlowOn;
       uniform vec3 uGlowColor;
       uniform vec2 uHullX;
       uniform float uWl[${WL_STATIONS + 1}];
       uniform sampler2D tReflect;
+      uniform vec2 uTexel;
       varying vec3 vWorld;
       varying vec4 vMirror;
 
-      // Sum of directional swells, chop and fine ripples; returns the surface slope.
+      // Long low swell, then chop, then fine ripples that fade with distance.
+      // Returns the surface slope (d height / dx, d height / dz).
+      #if DETAIL == 1
+        #define WAVES 14
+      #else
+        #define WAVES 9
+      #endif
       vec2 slope(vec2 p, float t, float fade) {
         vec2 g = vec2(0.0);
-        vec2 dirs[9] = vec2[9](vec2(1.0, 0.18), vec2(0.72, 0.69), vec2(-0.3, 0.95), vec2(0.94, -0.33), vec2(-0.82, 0.57), vec2(0.21, -0.98), vec2(0.55, 0.83), vec2(-0.64, -0.77), vec2(0.97, 0.24));
-        float freq[9] = float[9](0.32, 0.55, 0.9, 1.6, 2.7, 4.3, 7.1, 11.3, 17.9);
-        float amp[9] = float[9](0.05, 0.032, 0.02, 0.012, 0.007, 0.004, 0.0025, 0.0014, 0.0009);
-        for (int i = 0; i < 9; i++) {
-          float f = freq[i];
-          float speed = sqrt(9.8 * f) * 0.55;
-          float phase = dot(p, normalize(dirs[i])) * f + t * speed + float(i) * 1.7;
-          float a = amp[i] * (i > 3 ? fade : 1.0);
-          g += normalize(dirs[i]) * a * f * cos(phase);
+        for (int i = 0; i < WAVES; i++) {
+          float fi = float(i);
+          // The swells share a prevailing direction; shorter waves spread by the golden angle.
+          float a = i < 3 ? 0.35 + fi * 0.43 : 0.35 + fi * 2.39996;
+          vec2 d = vec2(cos(a), sin(a));
+          float f = 0.28 * pow(1.42, fi);
+          float speed = sqrt(9.8 * f) * 0.5;
+          float amp = 0.045 * pow(0.66, fi);
+          float phase = dot(p, d) * f + t * speed + fi * 1.7;
+          float k = i > 4 ? fade : 1.0;
+          g += d * amp * f * cos(phase) * k;
         }
         return g;
       }
@@ -128,40 +170,125 @@ export function createWater() {
 
       void main() {
         float dist = length(vWorld.xz - cameraPosition.xz);
-        float fade = 1.0 / (1.0 + dist * 0.06);
-        vec2 g = slope(vWorld.xz, uTime, fade) * (0.35 + 0.65 * fade);
+        float fade = 1.0 / (1.0 + dist * 0.07);
+        float d = max(hullDist(vWorld.xz), 0.0);
+        // The hull damps the ripples in its lee.
+        float lee = exp(-d * 1.4);
+        vec2 g = slope(vWorld.xz, uTime, fade) * (0.4 + 0.6 * fade) * (1.0 - 0.55 * lee);
         vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
         vec3 v = normalize(cameraPosition - vWorld);
-        float fres = 0.04 + 0.96 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 5.0);
-        vec3 r = reflect(-v, n);
-        r.y = abs(r.y);
-        vec3 body = uDeep * (0.7 + 0.5 * max(dot(n, uSunDir), 0.0));
+        float nv = clamp(dot(n, v), 0.0, 1.0);
+        float fres = 0.02 + 0.98 * pow(1.0 - nv, 5.0);
 
-        // Mirror image of the boat and sky, broken up by the surface slope; calmer in the lee.
-        float d = max(hullDist(vWorld.xz), 0.0);
-        float lee = exp(-d * 0.9);
-        vec2 ruv = vMirror.xy / vMirror.w + g * (0.5 - 0.3 * lee);
-        vec3 refl = texture2D(tReflect, ruv).rgb;
-        vec3 col = mix(body, refl, fres);
-        col += uSunColor * pow(max(dot(r, uSunDir), 0.0), 380.0) * 2.4 * (1.0 - lee);
+        // Water body: deep blue-green, lifted a touch by sky light and the low sun's scatter.
+        vec3 body = uDeep * (0.8 + 2.2 * max(dot(n, uSunDir) - 0.12, 0.0)) + uTop * 0.02;
 
-        // Dark band where the water meets the hull, and a thin broken wash line.
-        col = mix(col, uDeep * 0.35, 0.72 * exp(-d / 0.12));
-        float broken = 0.55 + 0.45 * sin(vWorld.x * 9.0 + uTime * 1.3 + sin(vWorld.z * 13.0));
-        col += vec3(0.62, 0.64, 0.63) * exp(-pow(d / 0.035, 2.0)) * broken * 0.4;
+        // Planar reflection of the boat and sky, broken up by the ripples and stretched
+        // vertically the way small waves smear a reflection.
+        vec2 ruv = vMirror.xy / vMirror.w + g * 0.055;
+        // Alpha is the boat's mask in the mirror image (the sky writes none).
+        vec4 mirror = texture2D(tReflect, ruv) * 0.5;
+        #if DETAIL == 1
+          vec2 sv = vec2(0.0, uTexel.y * (1.5 + 3.0 * (1.0 - lee)));
+          mirror += texture2D(tReflect, ruv + sv) * 0.25;
+          mirror += texture2D(tReflect, ruv - sv) * 0.25;
+        #else
+          mirror *= 2.0;
+        #endif
+        vec3 refl = mirror.rgb;
 
-        // Underwater lights: a soft patch seen through the surface, fading with reflection.
+        // Underwater lights: a soft cyan cone under the surface, from each lamp spreading aft;
+        // deeper lamps glow wider and fainter. xyz = lamp, w = 1 when fitted.
+        vec3 glow = vec3(0.0);
         for (int i = 0; i < 2; i++) {
-          vec2 dl = vWorld.xz - uGlow[i].xz;
-          col += uGlowColor * uGlowOn * exp(-dot(dl, dl) * 3.5) * 0.3 * (1.0 - fres);
+          vec2 rel = vWorld.xz - uGlow[i].xz;
+          float depth = clamp(-uGlow[i].y, 0.03, 1.0);
+          float along = dot(rel, uGlowAft);
+          float across = dot(rel, vec2(-uGlowAft.y, uGlowAft.x));
+          float width = 0.14 + depth * 0.4 + 0.32 * max(along, 0.0);
+          float reach = along < 0.0 ? exp(-along * along / 0.02) : exp(-along / (0.8 + depth));
+          float k = reach * exp(-across * across / (width * width)) * smoothstep(-0.25, 0.1, along);
+          glow += uGlowColor * k * uGlow[i].w * exp(-depth * 2.0);
         }
-        col = mix(col, skyColour(normalize(vec3(-v.x, 0.015, -v.z))), smoothstep(60.0, 1100.0, dist));
-        gl_FragColor = vec4(col, 1.0);
+        body += glow * uGlowOn * 0.35;
+
+        vec3 col = mix(body, refl, fres);
+
+        // Sun glitter: a sharp sparkle up close widening into a glitter path with distance,
+        // where the ripples are too small to resolve.
+        vec3 hv = normalize(uSunDir + v);
+        float e = mix(60.0, 1400.0, fade * fade);
+        float spec = pow(max(dot(n, hv), 0.0), e) * (e + 8.0) / 25.0;
+        col += uSunColor * spec * fres * 0.9 * (1.0 - 0.8 * lee) * (1.0 - mirror.a);
+
+        // Dark contact band where the water meets the hull, and a faint broken wash line.
+        col = mix(col, uDeep * 0.3, 0.55 * exp(-d / 0.07));
+        float broken = 0.5 + 0.5 * sin(vWorld.x * 11.0 + uTime * 1.1 + 3.0 * sin(vWorld.z * 7.0 + uTime * 0.7));
+        col += vec3(0.5, 0.52, 0.5) * exp(-pow(d / 0.025, 2.0)) * broken * 0.12;
+
+        // Horizon haze.
+        col = mix(col, skyColour(normalize(vec3(-v.x, 0.01, -v.z))), smoothstep(80.0, 1200.0, dist));
+
+        // Clear water within a hand's breadth of the hull: the submerged plate shows through,
+        // tinted by the wet-material patch; beyond, the sea is opaque.
+        float clear = 0.45 * exp(-d / 0.12) * (1.0 - fres) * step(0.001, d);
+        gl_FragColor = vec4(col, 1.0 - clear);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
+        gl_FragColor.rgb += dither(gl_FragCoord.xy) / 255.0;
       }`,
   });
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000, 1, 1), material);
   mesh.rotation.x = -Math.PI / 2;
+  // First among the transparent objects, so glass and decals always draw over it.
+  mesh.renderOrder = -1;
   return mesh;
+}
+
+// The floor of the clear-water band: a deep teal plane a metre down.
+export function createUnderwater() {
+  const material = new THREE.MeshBasicMaterial({ color: DEEP.clone().multiplyScalar(0.55) });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = -1.2;
+  return mesh;
+}
+
+// ---------- wet hull at the waterline ----------
+
+export function waterlineUniforms() {
+  return { uWetOn: { value: 0 }, uWetDeep: { value: DEEP.clone() } };
+}
+
+// Patches a lit boat material in place: within a few centimetres above the surface the plate
+// reads wet and darker (the meniscus), and below it fades into the water colour with depth.
+export function wetMaterial(material, uniforms) {
+  if (material.userData.wet || !(material.isMeshStandardMaterial || material.isMeshLambertMaterial || material.isMeshPhongMaterial)) return;
+  material.userData.wet = true;
+  const previous = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    if (previous) previous(shader, renderer);
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vWetY;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vec4 wetP = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          wetP = instanceMatrix * wetP;
+        #endif
+        vWetY = (modelMatrix * wetP).y;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vWetY;\nuniform float uWetOn;\nuniform vec3 uWetDeep;')
+      .replace('#include <opaque_fragment>', `
+        if (uWetOn > 0.5) {
+          float wet = 1.0 - smoothstep(0.0, 0.06, vWetY);
+          outgoingLight *= 1.0 - 0.5 * wet * wet;
+          float depth = max(-vWetY, 0.0);
+          if (depth > 0.0) outgoingLight = mix(outgoingLight * vec3(0.45, 0.72, 0.78), uWetDeep, 1.0 - exp(-depth * 7.0));
+        }
+        #include <opaque_fragment>`);
+  };
+  const key = material.customProgramCacheKey.bind(material);
+  material.customProgramCacheKey = () => `${key()}|wet`;
+  material.needsUpdate = true;
 }
