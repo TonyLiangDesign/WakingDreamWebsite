@@ -7,7 +7,7 @@ import {
 } from './config.js';
 import { createMaterials, applyBuild } from './materials.js';
 import { buildBoat, disposeTree, TRAILER_LIFT, CRADLE_LIFT } from './boat.js';
-import { createSky, createWater, SUN_DIR } from './water.js';
+import { createSky, createWater, SUN_DIR, WL_STATIONS } from './water.js';
 import './style.css';
 
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -90,6 +90,8 @@ const mats = createMaterials();
 let build = fromHash(location.hash);
 let current = null;
 let lift = 0;
+// On the water the hull settles this far below its design waterline, so the chine sits under water.
+const SINK = 0.12;
 
 function rebuild() {
   if (current) {
@@ -112,22 +114,22 @@ function applyScene() {
   const onTrailer = !onWater && build.options.includes('trailer');
   current.trailer.visible = onTrailer;
   current.cradle.visible = !onWater && !onTrailer;
-  lift = onWater ? 0 : onTrailer ? TRAILER_LIFT : CRADLE_LIFT;
+  lift = onWater ? -SINK : onTrailer ? TRAILER_LIFT : CRADLE_LIFT;
   vessel.position.y = lift;
   vessel.rotation.set(0, 0, 0);
 
   sky.visible = water.visible = onWater;
   floor.visible = contact.visible = !onWater;
   scene.environment = onWater ? waterEnv : studioEnv;
-  scene.environmentIntensity = onWater ? 1.0 : 0.9;
+  scene.environmentIntensity = onWater ? 0.7 : 0.9;
   renderer.toneMappingExposure = onWater ? 0.95 : 1.05;
   if (onWater) {
-    key.color.set('#ffd2a1');
-    key.intensity = 2.6;
+    key.color.set('#ffdfbd');
+    key.intensity = 2.5;
     key.position.copy(SUN_DIR).multiplyScalar(20);
-    fill.color.set('#9fb8d6');
+    fill.color.set('#a9c4e4');
     fill.groundColor.set('#1d2c33');
-    fill.intensity = 0.55;
+    fill.intensity = 0.8;
   } else {
     key.color.set('#ffffff');
     key.intensity = 2.2;
@@ -141,14 +143,19 @@ function applyScene() {
   contact.scale.set(L + (onTrailer ? 3.2 : 1.4), 3.0, 1);
   contact.position.x = onTrailer ? 0.8 : 0;
   water.material.uniforms.uGlowOn.value = onWater && current.leds.length ? 1 : 0;
-  water.material.uniforms.uHull.value.set(0, 0, L * 0.55, current.lines.B * 0.6);
+  // Waterline half-widths from the transom to where the forefoot leaves the water.
+  const wl = (t) => current.lines.bottomZ(current.lines.section(t), SINK);
+  let bow = 0.5;
+  while (bow < 1 && wl(bow) > 0.001) bow += 0.005;
+  water.material.uniforms.uHullX.value.set(-L / 2, L * bow);
+  water.material.uniforms.uWl.value = Array.from({ length: WL_STATIONS + 1 }, (_, i) => wl((i / WL_STATIONS) * bow));
   controls.maxPolarAngle = onWater ? Math.PI * 0.485 : Math.PI * 0.49;
 }
 
 // ---------- camera views ----------
 
 const VIEWS = {
-  hero: { label: 'Three-quarter', pos: [5.6, 2.3, 6.4], target: [0.2, 1.0, 0] },
+  hero: { label: 'Three-quarter', pos: [6.2, 2.5, 7.1], target: [0.2, 1.0, 0] },
   side: { label: 'Profile', pos: [0, 1.3, 10.8], target: [0, 1.0, 0] },
   stern: { label: 'Stern', pos: [-7.0, 2.3, 3.4], target: [-0.6, 0.8, 0] },
   bow: { label: 'Bow', pos: [7.4, 2.4, -3.2], target: [0.4, 0.9, 0] },
@@ -351,7 +358,16 @@ quote.addEventListener('submit', (event) => {
   lead.showModal();
 });
 
-$('#lead-close').addEventListener('click', () => lead.close());
+// Clear the buyer's details once they've seen the lead, so a shared show tablet keeps nothing.
+function forgetBuyer() {
+  quote.reset();
+  syncControls();
+}
+$('#lead-close').addEventListener('click', () => {
+  lead.close();
+  forgetBuyer();
+});
+lead.addEventListener('close', forgetBuyer);
 $('#lead-copy').addEventListener('click', async (event) => {
   const button = event.currentTarget;
   try {

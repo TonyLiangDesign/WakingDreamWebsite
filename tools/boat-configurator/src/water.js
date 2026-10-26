@@ -5,9 +5,12 @@ import * as THREE from 'three';
 
 export const SUN_DIR = new THREE.Vector3(-0.62, 0.17, 0.77).normalize();
 
+// The waterline is sampled at this many stations from transom to bow.
+export const WL_STATIONS = 16;
+
 const skyUniforms = () => ({
   uTop: { value: new THREE.Color('#4f74a3') },
-  uHorizon: { value: new THREE.Color('#f0c39b') },
+  uHorizon: { value: new THREE.Color('#e8cbb2') },
   uSunDir: { value: SUN_DIR.clone() },
   uSunColor: { value: new THREE.Color('#ffd7a8') },
 });
@@ -66,7 +69,8 @@ export function createWater() {
     uGlow: { value: [new THREE.Vector3(), new THREE.Vector3()] },
     uGlowOn: { value: 0 },
     uGlowColor: { value: new THREE.Color('#2f9cff') },
-    uHull: { value: new THREE.Vector4(0, 0, 3, 1.1) },
+    uHullX: { value: new THREE.Vector2(-3, 6) },
+    uWl: { value: new Array(WL_STATIONS + 1).fill(0) },
   };
   const material = new THREE.ShaderMaterial({
     uniforms,
@@ -84,7 +88,8 @@ export function createWater() {
       uniform vec3 uGlow[2];
       uniform float uGlowOn;
       uniform vec3 uGlowColor;
-      uniform vec4 uHull;
+      uniform vec2 uHullX;
+      uniform float uWl[${WL_STATIONS + 1}];
       varying vec3 vWorld;
 
       // Sum of directional swells and chop; returns the surface slope.
@@ -103,6 +108,17 @@ export function createWater() {
         return g;
       }
 
+      // Approximate distance from the hull's waterline: transom at uHullX.x, length uHullX.y.
+      float hullDist(vec2 p) {
+        float t = (p.x - uHullX.x) / uHullX.y;
+        float tc = clamp(t, 0.0, 1.0);
+        float f = tc * ${WL_STATIONS}.0;
+        int i = int(min(floor(f), ${WL_STATIONS - 1}.0));
+        float hw = mix(uWl[i], uWl[i + 1], f - float(i));
+        float dz = abs(p.y) - hw;
+        return length(vec2((t - tc) * uHullX.y, max(dz, 0.0))) + min(dz, 0.0);
+      }
+
       void main() {
         float dist = length(vWorld.xz - cameraPosition.xz);
         float fade = 1.0 / (1.0 + dist * 0.06);
@@ -115,11 +131,15 @@ export function createWater() {
         vec3 refl = skyColour(r);
         vec3 body = uDeep * (0.7 + 0.5 * max(dot(n, uSunDir), 0.0));
 
-        // Calm, darker water in the lee of the hull.
-        vec2 rel = vWorld.xz - uHull.xy;
-        float lee = exp(-pow(length(rel / vec2(uHull.z, uHull.w)), 2.0) * 1.4);
+        // Calm water in the lee of the hull, a dark reflection where it meets the topsides
+        // and a thin broken wash line at the waterline.
+        float d = max(hullDist(vWorld.xz), 0.0);
+        float lee = exp(-d * 0.9);
         vec3 col = mix(body, refl, fres * (1.0 - 0.55 * lee));
         col += uSunColor * pow(max(dot(r, uSunDir), 0.0), 380.0) * 2.4 * (1.0 - lee);
+        col = mix(col, uDeep * 0.45, 0.6 * exp(-d / 0.16));
+        float broken = 0.55 + 0.45 * sin(vWorld.x * 9.0 + uTime * 1.3 + sin(vWorld.z * 13.0));
+        col += vec3(0.62, 0.64, 0.63) * exp(-pow(d / 0.035, 2.0)) * broken * 0.5;
 
         for (int i = 0; i < 2; i++) {
           vec2 d = vWorld.xz - uGlow[i].xz;
