@@ -15,6 +15,7 @@ Static studio site with two listed project pages, a selected-work page and an un
 /assets/          images
 /assets/unreal/   optimised WebP images, posters, WebM and MP4 videos
 /_drafts/         local-only scratch (git-ignored)
+/boat-research/   local-only boat visualisation business research (git-ignored)
 ```
 
 Links and asset paths are root-relative (`/assets/...`), so the site must be served from a

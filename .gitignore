@@ -1,3 +1,6 @@
 .DS_Store
 _drafts/
 node_modules/
+
+# Boat business research: local only, never published
+boat-research/
