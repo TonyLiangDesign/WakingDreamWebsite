@@ -155,7 +155,7 @@ function applyScene() {
 // ---------- camera views ----------
 
 const VIEWS = {
-  hero: { label: 'Three-quarter', pos: [6.2, 2.5, 7.1], target: [0.2, 1.0, 0] },
+  hero: { label: 'Three-quarter', pos: [5.6, 2.3, 6.35], target: [0.2, 0.95, 0] },
   side: { label: 'Profile', pos: [0, 1.3, 10.8], target: [0, 1.0, 0] },
   stern: { label: 'Stern', pos: [-7.0, 2.3, 3.4], target: [-0.6, 0.8, 0] },
   bow: { label: 'Bow', pos: [7.4, 2.4, -3.2], target: [0.4, 0.9, 0] },

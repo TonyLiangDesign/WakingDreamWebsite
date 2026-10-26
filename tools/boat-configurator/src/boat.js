@@ -278,6 +278,15 @@ function hull(group, lines, m, build, twin) {
     const strake = spaced(0, 0.99, 30).map(section).map((s) => v3(s.x, s.ys - 0.035, side * (s.hb + 0.02)));
     add(group, tube(strake, 0.032, 120), m.rubber);
   }
+  // Vertical plate joins on the topsides, clear of the name decal.
+  for (const t of [0.27, 0.44, 0.78]) {
+    const s = section(t);
+    const y1 = s.ys - 0.06;
+    for (const side of [1, -1]) {
+      const pts = [[s.zf, s.yf + 0.01], [s.zn, s.yn], [lines.sideZ(s, y1), y1]].map(([z, y]) => v3(s.x, y, side * (z + 0.0015)));
+      add(group, tube(pts, 0.0045, 10, 5), m.paint, { cast: false });
+    }
+  }
   const keelLine = [...spaced(0, 1, 30).map((t) => v3(t * L, lines.keel(t) - KEEL_BAR / 2, 0)), v3(L + 0.01, lines.sheer(1) - 0.06, 0)];
   add(group, tube(keelLine, KEEL_BAR / 2 + 0.004, 96, 6), m.alloy);
 
@@ -352,6 +361,15 @@ function hull(group, lines, m, build, twin) {
   for (const dz of [-0.12, 0.12]) rod(group, v3(lx, platY + 0.03, lz + dz), v3(lx - 0.1, platY - 0.62, lz + dz), 0.011, m.stainless);
   for (const f of [0.35, 0.65, 0.95]) rod(group, v3(lx - 0.1 * f, platY + 0.03 - 0.65 * f, lz - 0.12), v3(lx - 0.1 * f, platY + 0.03 - 0.65 * f, lz + 0.12), 0.012, m.stainless);
 
+  // Transom step on the port pod, up to the door sill, with a grab handle on the capping.
+  const stepY = platY + 0.19;
+  const stepW = Math.min(0.42, s0.zf - zi - 0.08);
+  const step = add(group, new RoundedBoxGeometry(0.24, stepY - platY, stepW, 2, 0.015), m.paint);
+  step.position.set(-0.12, (stepY + platY) / 2 + 0.01, lz);
+  box(group, m.nonslip, [0.2, 0.01, stepW - 0.04], [-0.12, stepY + 0.016, lz], { cast: false });
+  for (const z of [lz - stepW / 2 + 0.02, lz + stepW / 2 - 0.02]) box(group, m.rubber, [0.008, s0.ys - stepY - 0.06, 0.012], [-0.004, (s0.ys + stepY) / 2 - 0.01, z], { cast: false });
+  add(group, tube([v3(0.02, s0.ys, lz - 0.16), v3(-0.02, s0.ys + 0.1, lz - 0.1), v3(-0.02, s0.ys + 0.1, lz + 0.1), v3(0.02, s0.ys, lz + 0.16)], 0.012, 20, 6), m.stainless);
+
   nameDecal(group, lines, resolve(build).model.name, letteringColour(build));
   return { podTop, podHalf, zi, platY, bottomAt };
 }
@@ -391,6 +409,53 @@ function seat(group, m, x, z, pedestal) {
 function navLight(group, m, x, y, z) {
   box(group, m.galv, [0.12, 0.06, 0.02], [x, y, z]);
   box(group, z > 0 ? m.navGreen : m.navRed, [0.09, 0.035, 0.02], [x + 0.005, y, z + Math.sign(z) * 0.012], { cast: false });
+}
+
+// ---------- helm ----------
+
+// Wheel on a tilt column from base along dir (in the x-y plane), with three spokes.
+function helmWheel(group, m, base, dir, reach = 0.2, radius = 0.17) {
+  const centre = base.clone().addScaledVector(dir, reach);
+  rod(group, base, centre, 0.026, m.dash, 10);
+  const wheel = add(group, new THREE.TorusGeometry(radius, 0.017, 8, 36), m.rubber);
+  wheel.position.copy(centre);
+  wheel.quaternion.setFromUnitVectors(v3(0, 0, 1), dir);
+  const hub = add(group, new THREE.CylinderGeometry(0.045, 0.045, 0.05, 16), m.stainless);
+  hub.position.copy(centre);
+  hub.quaternion.setFromUnitVectors(v3(0, 1, 0), dir);
+  const u = v3(0, 0, 1);
+  const w = new THREE.Vector3().crossVectors(dir, u).normalize();
+  for (const a of [Math.PI / 2, (Math.PI * 7) / 6, (Math.PI * 11) / 6]) {
+    rod(group, centre, centre.clone().addScaledVector(u, Math.cos(a) * radius).addScaledVector(w, Math.sin(a) * radius), 0.009, m.stainless, 6);
+  }
+}
+
+// Panel set into a face tilted back by tilt radians: a bezel with a part proud of it.
+function flushPanel(group, bezelMat, faceMat, centre, tilt, w, h) {
+  const bezel = add(group, new THREE.BoxGeometry(0.02, h + 0.04, w + 0.04), bezelMat);
+  bezel.position.copy(centre);
+  bezel.rotation.z = -tilt;
+  const face = add(group, new THREE.BoxGeometry(0.004, h, w), faceMat, { cast: false });
+  face.position.copy(centre).add(v3(-Math.cos(tilt) * 0.011, Math.sin(tilt) * 0.011, 0));
+  face.rotation.z = -tilt;
+}
+
+function binnacle(group, m, x, y, z) {
+  const body = add(group, new RoundedBoxGeometry(0.16, 0.1, 0.12, 2, 0.03), m.dash);
+  body.position.set(x, y + 0.05, z);
+  rod(group, v3(x, y + 0.08, z), v3(x - 0.1, y + 0.19, z), 0.012, m.stainless, 8);
+  const knob = add(group, new THREE.SphereGeometry(0.03, 12, 8), m.rubber);
+  knob.position.set(x - 0.1, y + 0.2, z);
+}
+
+function compass(group, m, x, y, z) {
+  const base = add(group, new THREE.CylinderGeometry(0.07, 0.08, 0.04, 20), m.rubber);
+  base.position.set(x, y + 0.02, z);
+  const card = add(group, new THREE.CircleGeometry(0.055, 20), m.seat, { cast: false });
+  card.position.set(x, y + 0.042, z);
+  card.rotation.x = -Math.PI / 2;
+  const dome = add(group, new THREE.SphereGeometry(0.065, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), m.glass, { cast: false });
+  dome.position.set(x, y + 0.04, z);
 }
 
 // Walkaround hardtop: tapered, tumblehomed sides, raked screen, open aft to the cockpit.
@@ -483,18 +548,29 @@ function hardtop(group, lines, m, build) {
   allRound.position.set(roofAft + 0.3, yR + 0.44, 0);
 
   // Helm and pedestal seats, seen through the open back; cuddy entrance forward.
+  // Moulded dash with a raked face: flush MFD, switch panel, wheel on a tilt column,
+  // throttle binnacle to starboard and a compass on top. Helm console below, cuddy to port.
   const dashX = C[0] - 0.18;
   const dashW = 2 * hwT(dashX + 0.2) - 0.08;
-  box(group, m.rubber, [0.36, C[1] - 0.12 - (DECK_Y + 0.7), dashW], [dashX, (C[1] - 0.12 + DECK_Y + 0.7) / 2, 0]);
+  const dTop = C[1] + 0.05;
+  const fTop = [dashX - 0.04, dTop];
+  const fBot = [dashX - 0.2, dTop - 0.26];
+  const tilt = Math.atan2(fTop[0] - fBot[0], fTop[1] - fBot[1]);
+  const nrm = v3(-Math.cos(tilt), Math.sin(tilt), 0);
+  const onFace = (f, z, out = 0.012) => v3(lerp(fBot[0], fTop[0], f), lerp(fBot[1], fTop[1], f), z).addScaledVector(nrm, out);
+  // Top sits just under the raked screen, the nose chamfered down to clear it.
+  add(group, extrudeProfile([[dashX + 0.18, DECK_Y + 0.62], [dashX + 0.18, C[1] - 0.1], [dashX + 0.08, dTop], fTop, fBot, [dashX - 0.2, DECK_Y + 0.62]], dashW, 0.02), m.dash);
   box(group, m.deck, [0.04, 0.7, dashW], [dashX + 0.16, DECK_Y + 0.35, 0]);
-  box(group, m.rubber, [0.02, 0.5, 0.55], [dashX - 0.17, DECK_Y + 0.33, -0.18], { cast: false });
-  const mfd = add(group, new THREE.BoxGeometry(0.04, 0.22, 0.36), m.screen);
-  mfd.position.set(dashX - 0.16, C[1] - 0.04, -0.2);
-  mfd.rotation.z = -0.4;
-  const wheel = add(group, new THREE.TorusGeometry(0.17, 0.016, 8, 32), m.rubber);
-  wheel.position.set(dashX - 0.26, C[1] - 0.12, hw(dashX) * 0.45);
-  wheel.rotation.y = Math.PI / 2;
-  wheel.rotation.x = 0.35;
+  const wheelZ = Math.min(hw(dashX) * 0.45, dashW / 2 - 0.22);
+  const consoleW = dashW / 2 - 0.02;
+  box(group, m.trim, [0.36, 0.62, consoleW], [dashX - 0.02, DECK_Y + 0.31, dashW / 2 - consoleW / 2]);
+  box(group, m.rubber, [0.01, 0.5, 0.42], [dashX + 0.135, DECK_Y + 0.33, -dashW / 4], { cast: false });
+  flushPanel(group, m.rubber, m.screen, onFace(0.56, -0.08), tilt, 0.36, 0.19);
+  flushPanel(group, m.rubber, m.dash, onFace(0.5, -(dashW / 2 - 0.16)), tilt, 0.16, 0.12);
+  for (let i = 0; i < 5; i++) box(group, m.seat, [0.02, 0.025, 0.012], onFace(0.5, -(dashW / 2 - 0.22) + i * 0.03, 0.025).toArray(), { cast: false });
+  helmWheel(group, m, onFace(0.38, wheelZ, 0), nrm, 0.2);
+  binnacle(group, m, dashX + 0.02, dTop, Math.min(wheelZ + 0.27, dashW / 2 - 0.1));
+  compass(group, m, dashX + 0.03, dTop, wheelZ);
   for (const side of [1, -1]) seat(group, m, dashX - 0.85, side * hw(dashX) * 0.45, 0.45);
 
   if (build.options.includes('rocket')) rocketLauncher(group, m, roofAft + 0.14, yR + 0.09, ra * 1.5, 6);
@@ -517,13 +593,15 @@ function centreConsole(group, lines, m, build) {
   }
   // Console door to the head, dash and electronics.
   box(group, m.rubber, [0.012, 0.55, 0.36], [cx1 + 0.002, DECK_Y + 0.38, 0], { cast: false });
-  const mfd = add(group, new THREE.BoxGeometry(0.04, 0.24, 0.42), m.screen);
-  mfd.position.set(cx0 + 0.18, top + 0.08, 0);
-  mfd.rotation.z = -0.35;
-  const wheel = add(group, new THREE.TorusGeometry(0.17, 0.016, 8, 32), m.rubber);
-  wheel.position.set(cx0 - 0.04, top - 0.12, 0.16);
-  wheel.rotation.y = Math.PI / 2;
-  wheel.rotation.x = -0.3;
+  const pod = add(group, new RoundedBoxGeometry(0.12, 0.3, 0.5, 2, 0.03), m.dash);
+  pod.position.set(cx0 + 0.22, top + 0.13, 0);
+  pod.rotation.z = -0.35;
+  flushPanel(group, m.rubber, m.screen, v3(cx0 + 0.22 - Math.cos(0.35) * 0.065, top + 0.13 + Math.sin(0.35) * 0.065, 0), 0.35, 0.4, 0.22);
+  helmWheel(group, m, v3(cx0 - 0.005, top - 0.2, 0.16), v3(-Math.cos(0.55), Math.sin(0.55), 0), 0.16);
+  binnacle(group, m, cx0 + 0.08, yTop(cx0 + 0.08), Math.min(0.32, Wc / 2 - 0.1));
+  compass(group, m, cx0 + 0.42, yTop(cx0 + 0.42), 0);
+  const switches = add(group, new THREE.BoxGeometry(0.01, 0.12, 0.22), m.dash);
+  switches.position.set(cx0 - 0.004, top - 0.18, -0.2);
 
   // Wrap-around screen with a stainless top rail and console grab rails.
   const sx0 = cx1 - 0.2;

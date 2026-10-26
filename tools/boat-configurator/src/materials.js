@@ -63,6 +63,48 @@ function treadTexture() {
   return texture;
 }
 
+// Generic chart-plotter page for the helm screens: water, a headland, contours and a track.
+function chartTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 160;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0d3a57';
+  ctx.fillRect(0, 0, 256, 160);
+  ctx.strokeStyle = 'rgba(160,210,240,0.35)';
+  for (const r of [70, 95, 120]) {
+    ctx.beginPath();
+    ctx.ellipse(40, 20, r * 1.4, r, 0.3, 0, Math.PI);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#c9b27a';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(120, 0);
+  ctx.bezierCurveTo(110, 40, 70, 30, 60, 70);
+  ctx.bezierCurveTo(40, 90, 10, 80, 0, 100);
+  ctx.fill();
+  ctx.strokeStyle = '#ffffff';
+  ctx.setLineDash([6, 4]);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(80, 140);
+  ctx.lineTo(150, 95);
+  ctx.lineTo(215, 60);
+  ctx.stroke();
+  ctx.fillStyle = '#ffb347';
+  ctx.beginPath();
+  ctx.moveTo(150, 88);
+  ctx.lineTo(157, 101);
+  ctx.lineTo(143, 101);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(0, 140, 256, 20);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 export function createMaterials() {
   const brushed = brushedTexture();
   const tread = treadTexture();
@@ -71,12 +113,13 @@ export function createMaterials() {
     alloy: new THREE.MeshPhysicalMaterial({ color: '#b8bdc1', metalness: 1, roughness: 0.48, roughnessMap: brushed, side: THREE.DoubleSide }),
     deck: new THREE.MeshStandardMaterial({ color: '#c9ccca', roughness: 0.88, side: THREE.DoubleSide }),
     nonslip: new THREE.MeshStandardMaterial({ color: '#d6d8d6', map: tread, roughness: 0.95, side: THREE.DoubleSide }),
-    screen: new THREE.MeshStandardMaterial({ color: '#0a1a24', emissive: '#16405a', emissiveIntensity: 0.6, roughness: 0.2 }),
+    screen: new THREE.MeshStandardMaterial({ color: '#05080b', emissive: '#ffffff', emissiveMap: chartTexture(), emissiveIntensity: 0.55, roughness: 0.12 }),
+    dash: new THREE.MeshStandardMaterial({ color: '#2b2e31', roughness: 0.55, side: THREE.DoubleSide }),
     lens: new THREE.MeshStandardMaterial({ color: '#f4f6f8', emissive: '#fff4dc', emissiveIntensity: 0.4, roughness: 0.1 }),
     navRed: new THREE.MeshStandardMaterial({ color: '#5a0d0d', emissive: '#e0261d', emissiveIntensity: 0.8 }),
     navGreen: new THREE.MeshStandardMaterial({ color: '#0b3d1c', emissive: '#1fc85a', emissiveIntensity: 0.8 }),
     trim: new THREE.MeshPhysicalMaterial({ roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.1, side: THREE.DoubleSide }),
-    glass: new THREE.MeshPhysicalMaterial({ color: '#0d151a', metalness: 0.1, roughness: 0.03, transparent: true, opacity: 0.82, envMapIntensity: 1.6 }),
+    glass: new THREE.MeshPhysicalMaterial({ color: '#0d151a', metalness: 0.1, roughness: 0.03, transparent: true, opacity: 0.6, envMapIntensity: 1.4 }),
     rubber: new THREE.MeshStandardMaterial({ color: '#141516', roughness: 0.72 }),
     stainless: new THREE.MeshStandardMaterial({ color: '#e5e8ea', metalness: 1, roughness: 0.16 }),
     cowling: new THREE.MeshPhysicalMaterial({ roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.06 }),
