@@ -20,6 +20,18 @@ function brushedTexture() {
     ctx.lineTo(x + 60 + Math.random() * 120, y + (Math.random() - 0.5) * 1.5);
     ctx.stroke();
   }
+  // Broad, soft patches so the plate never reads as one even sheen.
+  for (let i = 0; i < 26; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = 30 + Math.random() * 70;
+    const v = Math.random() < 0.5 ? 70 : 190;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(${v},${v},${v},0.16)`);
+    grad.addColorStop(1, `rgba(${v},${v},${v},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(3, 3);
@@ -27,12 +39,42 @@ function brushedTexture() {
   return texture;
 }
 
+// Raised-dot non-slip pattern for the cockpit floor, side decks and platforms.
+function treadTexture() {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#9a9e9d';
+  ctx.fillRect(0, 0, size, size);
+  for (let y = 0; y < size; y += 16) {
+    for (let x = (y / 16) % 2 ? 8 : 0; x < size; x += 16) {
+      ctx.fillStyle = '#c4c8c6';
+      ctx.beginPath();
+      ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(5, 5);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  return texture;
+}
+
 export function createMaterials() {
   const brushed = brushedTexture();
+  const tread = treadTexture();
   const m = {
     paint: new THREE.MeshPhysicalMaterial({ roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide }),
-    alloy: new THREE.MeshPhysicalMaterial({ color: '#b8bdc1', metalness: 1, roughness: 0.42, roughnessMap: brushed, side: THREE.DoubleSide }),
+    alloy: new THREE.MeshPhysicalMaterial({ color: '#b8bdc1', metalness: 1, roughness: 0.48, roughnessMap: brushed, side: THREE.DoubleSide }),
     deck: new THREE.MeshStandardMaterial({ color: '#c9ccca', roughness: 0.88, side: THREE.DoubleSide }),
+    nonslip: new THREE.MeshStandardMaterial({ color: '#d6d8d6', map: tread, roughness: 0.95, side: THREE.DoubleSide }),
+    screen: new THREE.MeshStandardMaterial({ color: '#0a1a24', emissive: '#16405a', emissiveIntensity: 0.6, roughness: 0.2 }),
+    lens: new THREE.MeshStandardMaterial({ color: '#f4f6f8', emissive: '#fff4dc', emissiveIntensity: 0.4, roughness: 0.1 }),
+    navRed: new THREE.MeshStandardMaterial({ color: '#5a0d0d', emissive: '#e0261d', emissiveIntensity: 0.8 }),
+    navGreen: new THREE.MeshStandardMaterial({ color: '#0b3d1c', emissive: '#1fc85a', emissiveIntensity: 0.8 }),
     trim: new THREE.MeshPhysicalMaterial({ roughness: 0.28, clearcoat: 1, clearcoatRoughness: 0.1, side: THREE.DoubleSide }),
     glass: new THREE.MeshPhysicalMaterial({ color: '#0d151a', metalness: 0.1, roughness: 0.03, transparent: true, opacity: 0.82, envMapIntensity: 1.6 }),
     rubber: new THREE.MeshStandardMaterial({ color: '#141516', roughness: 0.72 }),
