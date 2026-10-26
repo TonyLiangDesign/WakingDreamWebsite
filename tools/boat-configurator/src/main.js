@@ -1,262 +1,19 @@
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import {
   MODELS, LAYOUTS, HULL_COLOURS, TRIM_COLOURS, ENGINES, COWLINGS, OPTIONS, DEALERS, PRICE_MODES,
   engineAllowed, optionAllowed, normalise, resolve, lineItems, specText, shownTotal, nzd, toHash, fromHash,
 } from './config.js';
-import { createMaterials, applyBuild } from './materials.js';
-import { buildBoat, disposeTree, TRAILER_LIFT, CRADLE_LIFT } from './boat.js';
-
-const lerp = THREE.MathUtils.lerp;
-import { createSky, createWater, SUN_DIR, WL_STATIONS } from './water.js';
+import { reduceMotion, stage, mountBoat, resizeRenderer, snapshot, startLoop } from './scene.js';
+import { camera, controls, flyTo, rigChanged, resizeCamera, stepCamera, specShot } from './camera.js';
 import './style.css';
 
-const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const stage = document.querySelector('.stage');
-const canvas = document.getElementById('view');
+// UI wiring only: options panel, price modes, dealer quote, spec sheet, kiosk. The 3D side is
+// scene.js (world, boat, water, loop) and camera.js (views and framing).
 
-// ---------- renderer and scene ----------
-
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFShadowMap;
-// One shadow update per frame, shared by the reflection pass and the main render.
-renderer.shadowMap.autoUpdate = false;
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 4000);
-camera.position.set(5.6, 2.6, 6.4);
-const controls = new OrbitControls(camera, canvas);
-controls.enableDamping = true;
-controls.minDistance = 3;
-controls.maxDistance = 32;
-controls.target.set(0, 1.4, 0);
-controls.autoRotate = !reduceMotion;
-controls.autoRotateSpeed = 0.35;
-controls.addEventListener('start', () => { controls.autoRotate = false; framed = null; });
-
-const pmrem = new THREE.PMREMGenerator(renderer);
-const studioEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-const envScene = new THREE.Scene();
-const envSky = createSky();
-envSky.geometry = new THREE.SphereGeometry(50, 32, 16);
-envScene.add(envSky);
-const waterEnv = pmrem.fromScene(envScene, 0.02).texture;
-
-const key = new THREE.DirectionalLight('#ffffff', 2.2);
-key.castShadow = true;
-key.shadow.mapSize.set(2048, 2048);
-key.shadow.bias = -0.0004;
-key.shadow.normalBias = 0.02;
-key.shadow.radius = 3;
-Object.assign(key.shadow.camera, { left: -7, right: 7, top: 7, bottom: -7, near: 1, far: 40 });
-scene.add(key, key.target);
-const fill = new THREE.HemisphereLight('#dfe8f0', '#3a3530', 0.6);
-scene.add(fill);
-
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: 0.3 }));
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
-const contact = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.75 }));
-contact.rotation.x = -Math.PI / 2;
-contact.position.y = 0.002;
-scene.add(contact);
-
-const sky = createSky();
-const water = createWater();
-scene.add(sky, water);
-
-function blobTexture() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const ctx = c.getContext('2d');
-  const grad = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
-  grad.addColorStop(0, 'rgba(0,0,0,0.55)');
-  grad.addColorStop(0.6, 'rgba(0,0,0,0.18)');
-  grad.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 128, 128);
-  return new THREE.CanvasTexture(c);
-}
-
-// vessel (bobs on the water) > offset (centres the hull) > boat; stands stay put.
-const vessel = new THREE.Group();
-const offset = new THREE.Group();
-vessel.add(offset);
-const stand = new THREE.Group();
-scene.add(vessel, stand);
-
-const mats = createMaterials();
 let build = fromHash(location.hash);
-let current = null;
-let lift = 0;
-let framed = null;
-// Afloat the hull sits a little stern-down: the waterline is just above the chine at the
-// transom (WL_AFT) and falls towards the bow (WL_FWD), so only the forefoot clears the water.
-const WL_AFT = 0.22;
-const WL_FWD = 0.16;
-const SINK = (WL_AFT + WL_FWD) / 2;
-let trim = 0;
 
 function rebuild() {
-  if (current) {
-    offset.remove(current.boat);
-    stand.remove(current.trailer, current.cradle);
-    for (const part of [current.boat, current.trailer, current.cradle]) disposeTree(part);
-  }
-  applyBuild(mats, build);
-  current = buildBoat(build, mats);
-  offset.add(current.boat);
-  stand.add(current.trailer, current.cradle);
-  offset.position.x = -current.lines.L / 2;
-  stand.position.x = -current.lines.L / 2;
-  stage.dataset.scene = build.scene;
-  applyScene();
-}
-
-function applyScene() {
-  const onWater = build.scene === 'water';
-  const onTrailer = !onWater && build.options.includes('trailer');
-  current.trailer.visible = onTrailer;
-  current.cradle.visible = !onWater && !onTrailer;
-  lift = onWater ? -SINK : onTrailer ? TRAILER_LIFT : CRADLE_LIFT;
-  trim = onWater ? (WL_AFT - WL_FWD) / current.lines.L : 0;
-  rig = null;
-  vessel.position.y = lift;
-  vessel.rotation.set(0, 0, trim);
-
-  sky.visible = water.visible = onWater;
-  floor.visible = contact.visible = !onWater;
-  scene.environment = onWater ? waterEnv : studioEnv;
-  scene.environmentIntensity = onWater ? 0.7 : 0.9;
-  renderer.toneMappingExposure = onWater ? 0.95 : 1.05;
-  if (onWater) {
-    key.color.set('#ffdfbd');
-    key.intensity = 2.5;
-    key.position.copy(SUN_DIR).multiplyScalar(20);
-    fill.color.set('#a9c4e4');
-    fill.groundColor.set('#1d2c33');
-    fill.intensity = 0.8;
-  } else {
-    key.color.set('#ffffff');
-    key.intensity = 2.2;
-    key.position.set(5, 11, 6);
-    fill.color.set('#dfe8f0');
-    fill.groundColor.set('#3a3530');
-    fill.intensity = 0.6;
-  }
-  key.target.position.set(0, 0, 0);
-  const L = current.lines.L;
-  contact.scale.set(L + (onTrailer ? 3.2 : 1.4), 3.0, 1);
-  contact.position.x = onTrailer ? 0.8 : 0;
-  water.material.uniforms.uGlowOn.value = onWater && current.leds.length ? 1 : 0;
-  // Waterline half-widths from the transom to where the forefoot leaves the water.
-  const wl = (t) => current.lines.bottomZ(current.lines.section(t), lerp(WL_AFT, WL_FWD, t));
-  let bow = 0.5;
-  while (bow < 1 && wl(bow) > 0.001) bow += 0.005;
-  water.material.uniforms.uHullX.value.set(-L / 2, L * bow);
-  water.material.uniforms.uWl.value = Array.from({ length: WL_STATIONS + 1 }, (_, i) => wl((i / WL_STATIONS) * bow));
-  controls.maxPolarAngle = onWater ? Math.PI * 0.485 : Math.PI * 0.49;
-  if (framed) refit();
-}
-
-// ---------- camera views ----------
-
-// Each preset is a direction only; the distance is fitted to the visible rig for the stage's
-// shape. The three-quarter view fits every heading, because auto-rotate swings round from it.
-const VIEWS = {
-  hero: { label: 'Three-quarter', dir: [5.4, 1.35, 6.35], spin: true },
-  side: { label: 'Profile', dir: [0, 0.3, 10.8] },
-  stern: { label: 'Stern', dir: [-6.4, 1.5, 3.4] },
-  bow: { label: 'Bow', dir: [7.0, 1.5, -3.2] },
-  top: { label: 'Plan', dir: [0.01, 12.5, 0.4] },
-};
-const FILL_H = 0.92;  // share of the stage width the rig may use
-const FILL_V = 0.76;  // and of its height, leaving room for the title and the view buttons
-const Y_AXIS = new THREE.Vector3(0, 1, 0);
-let flight = null;
-
-// Points on what is on show: hull, engine and fit-out, plus the trailer or cradle. Rod blanks
-// are left out, so a rocket launcher may crop at the top rather than shrink the boat.
-let rig = null;
-function rigPoints() {
-  if (rig) return rig;
-  vessel.updateMatrixWorld(true);
-  stand.updateMatrixWorld(true);
-  const box = new THREE.Box3();
-  const points = [];
-  for (const part of [current.boat, current.trailer, current.cradle]) {
-    if (!part.visible) continue;
-    part.traverse((o) => {
-      if (!o.isMesh || o.material === mats.rod) return;
-      const pos = o.geometry.attributes.position;
-      const step = Math.max(1, Math.floor(pos.count / 500));
-      const ext = [];
-      for (let i = 0; i < pos.count; i++) {
-        const p = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
-        box.expandByPoint(p);
-        if (i % step === 0) points.push(p);
-        // Keep each part's extremes so thin tips are never skipped by the sampling.
-        for (let k = 0; k < 3; k++) {
-          if (!ext[k * 2] || p.getComponent(k) < ext[k * 2].getComponent(k)) ext[k * 2] = p;
-          if (!ext[k * 2 + 1] || p.getComponent(k) > ext[k * 2 + 1].getComponent(k)) ext[k * 2 + 1] = p;
-        }
-      }
-      points.push(...ext);
-    });
-  }
-  return (rig = { box, points });
-}
-
-function fitDistance(points, centre, dir, aspect) {
-  const right = new THREE.Vector3().crossVectors(Y_AXIS, dir).normalize();
-  const up = new THREE.Vector3().crossVectors(dir, right);
-  const tV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * FILL_V;
-  const tH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * aspect * FILL_H;
-  const q = new THREE.Vector3();
-  let d = 0;
-  for (const p of points) {
-    q.subVectors(p, centre);
-    const depth = q.dot(dir);
-    d = Math.max(d, Math.abs(q.dot(right)) / tH + depth, Math.abs(q.dot(up)) / tV + depth);
-  }
-  return d;
-}
-
-function viewTargets(name, { spin = VIEWS[name].spin, aspect = camera.aspect } = {}) {
-  const { box, points } = rigPoints();
-  const target = box.getCenter(new THREE.Vector3());
-  const base = new THREE.Vector3(...VIEWS[name].dir).normalize();
-  const turns = spin ? 24 : 1;
-  let d = 0;
-  for (let i = 0; i < turns; i++) d = Math.max(d, fitDistance(points, target, base.clone().applyAxisAngle(Y_AXIS, (i / turns) * Math.PI * 2), aspect));
-  return { pos: target.clone().addScaledVector(base, d), target };
-}
-
-// After a resize or a rig change, keep the current heading but refit distance and centre.
-function refit() {
-  if (!framed || !current) return;
-  const to = viewTargets(framed);
-  const heading = camera.position.clone().sub(controls.target).normalize();
-  if (!VIEWS[framed].spin) heading.copy(to.pos).sub(to.target).normalize();
-  const pos = to.target.clone().addScaledVector(heading, to.pos.distanceTo(to.target));
-  flight = { from: camera.position.clone(), fromTarget: controls.target.clone(), pos, target: to.target, start: performance.now(), duration: reduceMotion ? 0 : 500 };
-}
-
-function flyTo(name, instant = false) {
-  controls.autoRotate = false;
-  framed = name;
-  const to = viewTargets(name);
-  if (instant || reduceMotion) {
-    camera.position.copy(to.pos);
-    controls.target.copy(to.target);
-    return;
-  }
-  flight = { from: camera.position.clone(), fromTarget: controls.target.clone(), ...to, start: performance.now(), duration: 1100 };
+  mountBoat(build);
+  rigChanged();
 }
 
 // ---------- UI ----------
@@ -558,53 +315,9 @@ $('#copy-link').addEventListener('click', async (event) => {
   setTimeout(() => { button.textContent = 'Copy build link'; }, 2000);
 });
 
-// Copies the frame in the same task it is rendered, over the studio backdrop the CSS draws.
-function snapshot() {
-  renderer.render(scene, camera);
-  const out = document.createElement('canvas');
-  out.width = canvas.width;
-  out.height = canvas.height;
-  const ctx = out.getContext('2d');
-  if (build.scene === 'studio') {
-    const r = Math.hypot(out.width, out.height) * 0.6;
-    const grad = ctx.createRadialGradient(out.width / 2, out.height * 0.38, 0, out.width / 2, out.height * 0.38, r);
-    grad.addColorStop(0, '#3a3d40');
-    grad.addColorStop(0.48, '#222427');
-    grad.addColorStop(1, '#131415');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, out.width, out.height);
-  }
-  ctx.drawImage(canvas, 0, 0);
-  return out;
-}
-
-// Spec-sheet image: the three-quarter preset at a fixed 16:9, whatever the stage is showing.
-function specShot() {
-  const size = renderer.getSize(new THREE.Vector2());
-  const saved = { pos: camera.position.clone(), aspect: camera.aspect };
-  renderer.setSize(1280, 720, false);
-  camera.aspect = 1280 / 720;
-  camera.updateProjectionMatrix();
-  const to = viewTargets('hero', { spin: false, aspect: 1280 / 720 });
-  camera.position.copy(to.pos);
-  camera.lookAt(to.target);
-  camera.updateMatrixWorld();
-  if (build.scene === 'water') {
-    renderer.shadowMap.needsUpdate = true;
-    renderReflection(to.target);
-  }
-  const out = snapshot();
-  renderer.setSize(size.x, size.y, false);
-  camera.aspect = saved.aspect;
-  camera.updateProjectionMatrix();
-  camera.position.copy(saved.pos);
-  camera.lookAt(controls.target);
-  renderer.render(scene, camera);
-  return out;
-}
 
 $('#save-image').addEventListener('click', () => {
-  snapshot().toBlob((blob) => {
+  snapshot(camera).toBlob((blob) => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `${resolve(build).model.name.toLowerCase().replace(' ', '-')}-${build.layout}-${build.hull}.png`;
@@ -621,79 +334,12 @@ $('#reset').addEventListener('click', () => {
   flyTo('hero');
 });
 
-// ---------- loop ----------
-
 function resize() {
   const { width, height } = stage.getBoundingClientRect();
-  renderer.setSize(width, height, false);
-  camera.aspect = width / Math.max(height, 1);
-  camera.updateProjectionMatrix();
-  // Reflection at half resolution, less on small high-density screens.
-  const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
-  const scale = devicePixelRatio > 1.5 && width < 700 ? 0.35 : 0.5;
-  mirrorRT.setSize(Math.max(1, Math.round(buffer.x * scale)), Math.max(1, Math.round(buffer.y * scale)));
-  refit();
-}
-
-// ---------- water reflection: the scene mirrored in y = 0, clipped at the surface ----------
-
-const mirrorCam = new THREE.PerspectiveCamera();
-const mirrorRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
-const mirrorClip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)];
-const mirrorBias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
-water.material.uniforms.tReflect.value = mirrorRT.texture;
-
-function renderReflection(target = controls.target) {
-  mirrorCam.copy(camera);
-  mirrorCam.position.set(camera.position.x, -camera.position.y, camera.position.z);
-  mirrorCam.up.copy(Y_AXIS).applyQuaternion(camera.quaternion).reflect(Y_AXIS);
-  mirrorCam.lookAt(target.x, -target.y, target.z);
-  mirrorCam.updateMatrixWorld();
-  water.material.uniforms.uMirror.value.multiplyMatrices(mirrorBias, mirrorCam.projectionMatrix).multiply(mirrorCam.matrixWorldInverse);
-  water.visible = false;
-  sky.position.copy(mirrorCam.position);
-  renderer.clippingPlanes = mirrorClip;
-  renderer.setRenderTarget(mirrorRT);
-  renderer.render(scene, mirrorCam);
-  renderer.setRenderTarget(null);
-  renderer.clippingPlanes = [];
-  water.visible = true;
-  sky.position.copy(camera.position);
+  resizeRenderer(width, height);
+  resizeCamera(width / Math.max(height, 1));
 }
 new ResizeObserver(resize).observe(stage);
-
-const timer = new THREE.Timer();
-const glowPoint = new THREE.Vector3();
-const ease = (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
-
-function frame(now) {
-  timer.update(now);
-  const t = timer.getElapsed();
-  if (flight) {
-    const u = Math.min(1, (performance.now() - flight.start) / flight.duration);
-    const e = ease(u);
-    camera.position.lerpVectors(flight.from, flight.pos, e);
-    controls.target.lerpVectors(flight.fromTarget, flight.target, e);
-    if (u === 1) flight = null;
-  }
-  if (build.scene === 'water') {
-    const swell = reduceMotion ? 0 : 1;
-    vessel.position.y = lift + Math.sin(t * 0.9) * 0.035 * swell;
-    vessel.rotation.z = trim + Math.sin(t * 0.7 + 0.8) * 0.01 * swell;
-    vessel.rotation.x = Math.sin(t * 0.55) * 0.018 * swell;
-    water.material.uniforms.uTime.value = reduceMotion ? 0 : t;
-    current.leds.forEach((p, i) => {
-      glowPoint.copy(p).add(new THREE.Vector3(-0.5, 0, 0));
-      current.boat.localToWorld(glowPoint);
-      water.material.uniforms.uGlow.value[i].copy(glowPoint);
-    });
-  }
-  controls.update();
-  renderer.shadowMap.needsUpdate = true;
-  if (build.scene === 'water') renderReflection();
-  renderer.render(scene, camera);
-  requestAnimationFrame(frame);
-}
 
 // Phones open straight onto the boat; builder settings stay one tap away.
 if (matchMedia('(max-width: 979px)').matches) $('.builder').open = false;
@@ -704,6 +350,6 @@ document.fonts.ready.then(() => {
   resize();
   flyTo('hero', true);
   controls.autoRotate = !reduceMotion;
-  frame();
+  startLoop(camera, controls, stepCamera);
   requestAnimationFrame(() => $('#loading').classList.add('done'));
 });
