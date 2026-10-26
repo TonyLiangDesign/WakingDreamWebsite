@@ -2,8 +2,8 @@ import {
   MODELS, LAYOUTS, HULL_COLOURS, TRIM_COLOURS, ENGINES, COWLINGS, OPTIONS, DEALERS, PRICE_MODES,
   engineAllowed, optionAllowed, normalise, resolve, lineItems, specText, shownTotal, nzd, toHash, fromHash,
 } from './config.js';
-import { reduceMotion, stage, mountBoat, resizeRenderer, snapshot, startLoop } from './scene.js';
-import { camera, controls, flyTo, rigChanged, resizeCamera, stepCamera, specShot } from './camera.js';
+import { reduceMotion, stage, mountBoat, resizeRenderer, renderFrame, snapshot, startLoop } from './scene.js';
+import { camera, controls, flyTo, startSpin, rigChanged, resizeCamera, stepCamera, specShot, rigOnScreen } from './camera.js';
 import './style.css';
 
 // UI wiring only: options panel, price modes, dealer quote, spec sheet, kiosk. The 3D side is
@@ -100,7 +100,7 @@ form.addEventListener('change', (event) => {
   build = normalise(next);
   syncControls();
   rebuild();
-  if (modelChanged) flyTo('hero');
+  if (modelChanged) view('hero');
 });
 
 for (const button of document.querySelectorAll('[data-scene]')) {
@@ -108,17 +108,26 @@ for (const button of document.querySelectorAll('[data-scene]')) {
     build = normalise({ ...build, scene: button.dataset.scene });
     syncControls();
     rebuild();
-    flyTo('hero');
+    view('hero');
   });
 }
-for (const button of document.querySelectorAll('[data-view]')) button.addEventListener('click', () => flyTo(button.dataset.view));
+// The view buttons show which preset the camera holds, until the buyer turns it by hand.
+function showView(name) {
+  for (const button of document.querySelectorAll('[data-view]')) button.setAttribute('aria-pressed', String(button.dataset.view === name));
+}
+function view(name, instant) {
+  flyTo(name, instant);
+  showView(name);
+}
+for (const button of document.querySelectorAll('[data-view]')) button.addEventListener('click', () => view(button.dataset.view));
+controls.addEventListener('start', () => showView(null));
 
 // A build link pasted into the same tab only changes the hash.
 addEventListener('hashchange', () => {
   build = fromHash(location.hash);
   syncControls();
   rebuild();
-  flyTo('hero');
+  view('hero');
 });
 
 $('.builder').addEventListener('change', (event) => {
@@ -272,8 +281,9 @@ function startAttract() {
   build = normalise({ ...fromHash(''), price: build.price, kiosk: true });
   syncControls();
   rebuild();
-  flyTo('hero');
-  controls.autoRotate = !reduceMotion;
+  view('hero');
+  startSpin();
+  showView(null);
   document.querySelector('.panel').scrollTo({ top: 0 });
   scrollTo({ top: 0 });
   attract.hidden = false;
@@ -310,9 +320,9 @@ $('#copy-link').addEventListener('click', async (event) => {
     await navigator.clipboard.writeText(location.href);
     button.textContent = 'Link copied';
   } catch {
-    button.textContent = 'Copy from the address bar';
+    button.textContent = 'Copy failed';
   }
-  setTimeout(() => { button.textContent = 'Copy build link'; }, 2000);
+  setTimeout(() => { button.textContent = 'Copy link'; }, 2000);
 });
 
 
@@ -331,15 +341,42 @@ $('#reset').addEventListener('click', () => {
   quote.reset();
   syncControls();
   rebuild();
-  flyTo('hero');
+  view('hero');
 });
 
-function resize() {
-  const { width, height } = stage.getBoundingClientRect();
-  resizeRenderer(width, height);
-  resizeCamera(width / Math.max(height, 1));
+// The camera fits the boat to the part of the stage the overlays leave clear: below the title
+// row, above the view buttons (and the kiosk's attract button), with a margin at the sides.
+const GAP = 10;
+function stageInsets(box) {
+  const reach = (sel, edge) => {
+    const el = $(sel);
+    if (!el || el.hidden) return 0;
+    const r = el.getBoundingClientRect();
+    if (!r.width || !r.height) return 0;
+    return edge === 'top' ? r.bottom - box.top + GAP : box.bottom - r.top + GAP;
+  };
+  const side = Math.max(14, box.width * 0.03);
+  return {
+    width: box.width,
+    height: box.height,
+    top: Math.max(GAP * 2, reach('.stage-title', 'top'), reach('.stage-side', 'top')),
+    bottom: Math.max(GAP * 2, reach('.stage-views', 'bottom'), reach('#attract', 'bottom')),
+    left: side,
+    right: side,
+  };
 }
-new ResizeObserver(resize).observe(stage);
+
+let started = false;
+function resize() {
+  const box = stage.getBoundingClientRect();
+  if (!box.width || !box.height) return;
+  resizeRenderer(box.width, box.height);
+  resizeCamera(box.width / box.height, stageInsets(box));
+  // Draw the refitted frame now, so no frame is ever shown at the old fit.
+  if (started) renderFrame(camera, controls.target);
+}
+const stageObserver = new ResizeObserver(resize);
+for (const el of [stage, $('.stage-top'), $('.stage-views'), attract]) stageObserver.observe(el);
 
 // Phones open straight onto the boat; builder settings stay one tap away.
 if (matchMedia('(max-width: 979px)').matches) $('.builder').open = false;
@@ -348,10 +385,20 @@ syncControls();
 document.fonts.ready.then(() => {
   rebuild();
   resize();
-  // ?qaView=side holds a fixed view with no auto-rotate, for repeatable QA screenshots.
-  const qaView = new URLSearchParams(location.search).get('qaView');
-  flyTo(qaView || 'hero', true);
-  controls.autoRotate = !reduceMotion && !qaView;
+  // QA hooks: ?qaView=side holds a fixed view with no auto-rotate, for repeatable screenshots;
+  // ?qaScroll=600 scrolls the page first (phones: the sticky stage); either one also writes the
+  // rig's on-screen bounds and the safe area to <body data-qa-frame> for --dump-dom checks.
+  const params = new URLSearchParams(location.search);
+  const qaView = params.get('qaView');
+  const qaScroll = Number(params.get('qaScroll')) || 0;
+  view(qaView || 'hero', true);
+  if (!qaView) {
+    startSpin();
+    showView(null);
+  }
   startLoop(camera, controls, stepCamera);
+  started = true;
   requestAnimationFrame(() => $('#loading').classList.add('done'));
+  if (qaScroll) scrollTo(0, qaScroll);
+  if (qaView || qaScroll) setInterval(() => { document.body.dataset.qaFrame = JSON.stringify(rigOnScreen()); }, 250);
 });

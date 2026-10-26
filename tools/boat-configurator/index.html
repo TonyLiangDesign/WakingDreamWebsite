@@ -13,29 +13,33 @@
 <body>
   <header class="topbar">
     <a class="wordmark" href="/">Waking Dream <span>Technology</span></a>
-    <span class="pill">Boat configurator · Demo</span>
+    <span class="pill"><span class="pill-long">Boat configurator · </span>Demo</span>
     <button type="button" class="pill kiosk-exit" id="kiosk-exit">Exit kiosk</button>
   </header>
 
   <main class="cfg">
     <section class="stage" aria-label="3D view of the configured boat">
       <canvas id="view"></canvas>
-      <div class="stage-title">
-        <p class="eyebrow">Harbour series · Plate alloy</p>
-        <h1 id="model-name">Harbour 620 Hardtop</h1>
-        <p class="mono" id="model-dims"></p>
+      <div class="stage-top">
+        <div class="stage-title">
+          <p class="eyebrow">Harbour series · Plate alloy</p>
+          <h1 id="model-name">Harbour 620 Hardtop</h1>
+          <p class="mono" id="model-dims"></p>
+        </div>
+        <div class="stage-side">
+          <div class="stage-scene" role="group" aria-label="Setting">
+            <button type="button" data-scene="studio" aria-pressed="true">Studio</button>
+            <button type="button" data-scene="water" aria-pressed="false" aria-label="On the water"><span class="long">On the water</span><span class="short">Water</span></button>
+          </div>
+          <p class="scene-note" id="scene-note" hidden>Trailer hidden on the water</p>
+        </div>
       </div>
-      <div class="stage-scene" role="group" aria-label="Setting">
-        <button type="button" data-scene="studio" aria-pressed="true">Studio</button>
-        <button type="button" data-scene="water" aria-pressed="false">On the water</button>
-      </div>
-      <p class="scene-note" id="scene-note" hidden>Trailer hidden on the water</p>
       <nav class="stage-views" aria-label="Camera views">
-        <button type="button" data-view="hero">Three-quarter</button>
-        <button type="button" data-view="side">Profile</button>
-        <button type="button" data-view="bow">Bow</button>
-        <button type="button" data-view="stern">Stern</button>
-        <button type="button" data-view="top">Plan</button>
+        <button type="button" data-view="hero" aria-pressed="false">Three-quarter</button>
+        <button type="button" data-view="side" aria-pressed="false">Profile</button>
+        <button type="button" data-view="bow" aria-pressed="false">Bow</button>
+        <button type="button" data-view="stern" aria-pressed="false">Stern</button>
+        <button type="button" data-view="top" aria-pressed="false">Plan</button>
       </nav>
       <p class="stage-hint">Drag to turn · Scroll or pinch to zoom</p>
       <button type="button" id="attract" hidden>Touch to build your boat</button>
