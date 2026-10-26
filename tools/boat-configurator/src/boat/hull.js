@@ -279,7 +279,7 @@ function millTexture() {
   texture.anisotropy = 8;
   return texture;
 }
-function plateAlloy() {
+export function plateAlloy() {
   if (!millPlate) {
     millPlate = new THREE.MeshPhysicalMaterial({ color: '#bfc4c8', metalness: 1, roughness: 0.6, roughnessMap: millTexture(), side: THREE.DoubleSide });
     millPlate.userData.shared = true;

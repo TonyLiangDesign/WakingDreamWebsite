@@ -164,7 +164,7 @@ export function createMaterials() {
     rod: new THREE.MeshStandardMaterial({ color: '#16181a', roughness: 0.35 }),
     wood: new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.82 }),
     tailLight: new THREE.MeshStandardMaterial({ color: '#5a0d0d', emissive: '#d4231c', emissiveIntensity: 0.6 }),
-    led: new THREE.MeshStandardMaterial({ color: '#0b2a4a', emissive: '#3fa9ff', emissiveIntensity: 3 }),
+    led: new THREE.MeshStandardMaterial({ color: '#0b2a4a', emissive: '#3fa9ff', emissiveIntensity: 1.5 }),
   };
   return m;
 }

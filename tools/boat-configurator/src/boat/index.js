@@ -26,8 +26,8 @@ export function buildBoat(build, m) {
   hullShell(boat, lines, m);
   const deck = cockpit(boat, lines, m, build, twin);
   nameDecal(boat, lines, r.model.name, letteringColour(build));
-  if (build.layout === 'ht') hardtopHelm(boat, m, hardtop(boat, lines, m, build));
-  else consoleHelm(boat, m, centreConsole(boat, lines, m, build));
+  if (build.layout === 'ht') hardtopHelm(boat, m, hardtop(boat, lines, m, build), { twin });
+  else consoleHelm(boat, m, centreConsole(boat, lines, m, build), { twin });
   bowFittings(boat, lines, m);
   if (build.options.includes('bowrail')) bowRail(boat, lines, m);
   if (build.options.includes('bait')) baitStation(boat, lines, m);

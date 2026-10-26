@@ -69,6 +69,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .stage[data-scene="water"] { background: #1c2833; }
 .stage { container-type: inline-size; }
 .stage::before { content: ""; position: absolute; inset: 0 0 auto; height: 150px; z-index: 1; pointer-events: none; background: linear-gradient(rgba(11, 11, 12, 0.45), rgba(11, 11, 12, 0)); }
+/* The golden-hour sky is bright behind the title: deepen the scrim and lift the small text on the water. */
+.stage[data-scene="water"]::before { height: 190px; background: linear-gradient(rgba(11, 11, 12, 0.62), rgba(11, 11, 12, 0)); }
+.stage[data-scene="water"] .stage-title .eyebrow, .stage[data-scene="water"] #model-dims { color: #e9efe9; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.55); }
 .stage > :not(canvas) { z-index: 2; }
 #view { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
 #view:active { cursor: grabbing; }

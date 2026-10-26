@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { add, tube, rod, box, crossSection, spaced, v3, lerp, clamp01 } from './kit.js';
 import { DECK_Y, CAP } from './hull.js';
+import { nonslipMaterial } from './cockpit.js';
 import * as fit from './fittings.js';
 
 // Walkaround hardtop, built from flat alloy plate like the real thing: side walls with a little
@@ -426,8 +427,7 @@ export function hardtop(group, lines, m, build) {
   }
 
   // ----- side decks, flush with the foredeck, with an end face at the cabin's aft end -----
-  // UVs in metres. INTEGRATION SWITCH: set deckMat to nonslipMaterial() from cockpit.js.
-  const deckMat = m.nonslip;
+  const deckMat = nonslipMaterial();
   const metres = (p) => [p[0], p[2]];
   pair(group, grid(spaced(0, 1, 3), spaced(x0, x1, 16), (u, x) => [x, sideY(x), lerp(wallZ(x, sideY(x)), section(x / L).inner, u)], metres), deckMat);
   // Short deck ahead of the cabin front, continuing cockpit.js's foredeck (same surface).

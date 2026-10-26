@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { add, tube, rod, box, crossSection, ribbon, loft, spaced, v3, lerp } from './kit.js';
-import { DECK_Y, CAP, KEEL_BAR, topsideMaterial } from './hull.js';
+import { DECK_Y, CAP, KEEL_BAR, topsideMaterial, plateAlloy } from './hull.js';
 
 // Cockpit and transom: toned inner liner with a rolled coaming edge and a cove at the floor, padded
 // coaming bolsters over open side pockets, smooth-bordered non-slip floor panels with a flush
@@ -326,7 +326,7 @@ export function cockpit(group, lines, m, build, twin) {
   // Hull-coloured parts take the topside material (the paint, or mill-finish plate on bare-alloy
   // builds); bottoms take the hull's bottom plate, which topsideMaterial() returns for a bare build.
   const topside = topsideMaterial(m);
-  const plate = topsideMaterial({ paint: { metalness: 1 } });
+  const plate = plateAlloy();
   const podHalf = twin ? 0.66 : 0.4;
   // Engine mounting surface at 25" (XL) shaft height: 635 mm above the keel plus the 30 mm the
   // anti-ventilation plate sits above the bottom at the transom.
