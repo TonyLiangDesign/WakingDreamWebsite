@@ -470,9 +470,14 @@ export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
   const [Cx, Cy] = C;
   const walls = (x, y) => wallZ(x, y) - 0.004;
   const xB = Cx - 0.07;         // forward bulkhead, just aft of the screen foot
-  const dTop = Cy + 0.035;      // dash top, just below the window sills
+  // Dash top just above the screen foot, but never more than 1.2 m off the floor: it must stay
+  // under the cabin's window sills (DECK_Y + 1.23). When the foot is higher, a raked lip under
+  // the glass climbs from the dash top to the foot.
+  const dTop = Math.min(Cy + 0.035, DECK_Y + 1.2);
   const xT = xB - 0.27;         // aft edge of the dash top, under the brow
-  const yKnee = DECK_Y + 0.58;  // underside of the helm pod where it meets the bulkhead
+  // Underside of the helm pod where it meets the bulkhead; kept under the pod face's foot so
+  // the pod profile cannot fold over on a low dash.
+  const yKnee = Math.min(DECK_Y + 0.58, dTop - 0.45);
   const wHelm = walls(xT, dTop - 0.2);
   const zw = wHelm - 0.4;       // wheel and helm seat centreline
   // MFD sized to the dash: 9" on the 550, 10" on the 620, 12" on the 680.
@@ -482,8 +487,10 @@ export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
   const zM = zw - 0.175 - 0.03 - mfdW / 2;
   const zIn = zM - mfdW / 2 - 0.06;  // inboard cheek of the helm pod
 
-  // Dash top wall to wall: nose tucked under the screen foot, flat top, rounded brow lip.
-  add(group, moulding([[Cx - 0.005, Cy - 0.05], [Cx - 0.005, Cy - 0.022], [xB, dTop], [xT + 0.02, dTop], [xT - 0.012, dTop - 0.012], [xT - 0.014, dTop - 0.04], [xT + 0.04, dTop - 0.05], [xB + 0.03, Cy - 0.05]], -1.5, 1.5, walls), m.trim);
+  // Dash top wall to wall: nose tucked under the screen foot, flat top, rounded brow lip. The
+  // underside follows the lower of the foot and the dash top so the profile never inverts.
+  const yUnder = Math.min(Cy - 0.05, dTop - 0.05);
+  add(group, moulding([[Cx - 0.005, Math.min(Cy - 0.05, dTop - 0.085)], [Cx - 0.005, Cy - 0.022], [xB, dTop], [xT + 0.02, dTop], [xT - 0.012, dTop - 0.012], [xT - 0.014, dTop - 0.04], [xT + 0.04, dTop - 0.05], [xB + 0.03, yUnder]], -1.5, 1.5, walls), m.trim);
   // Anti-glare top.
   // (The moulding's 8 mm bevel puts its skin at dTop + 0.008; the cap's top is at dTop + 0.015.)
   add(group, moulding([[xT + 0.03, dTop + 0.004], [xB - 0.012, dTop + 0.004], [xB - 0.012, dTop + 0.012], [xT + 0.03, dTop + 0.012]], -1.5, 1.5, (x, y) => walls(x, y) - 0.01, 0.003), hm.fascia);
@@ -622,7 +629,8 @@ export function consoleHelm(group, m, { cx0, top, Wc, yTop, postX }, { twin = fa
 
 // Leaning post: moulded tackle module with drawers on its aft face, vinyl bolster on top,
 // stainless frame carrying the backrest and a top rail (the rocket launcher option sits on it,
-// at postX - 0.3, DECK_Y + 1.26), rod holders behind and a footrest bar in front.
+// at postX - 0.3, DECK_Y + 1.26), rod holders on the module's outboard sides and a footrest bar
+// in front.
 function leaningPost(group, m, hm, postX) {
   const xp = postX - 0.12;
   const W = 0.72;
@@ -654,16 +662,34 @@ function leaningPost(group, m, hm, postX) {
   const back = add(group, new RoundedBoxGeometry(0.08, 0.3, W - 0.12, 2, 0.035), hm.vinyl);
   back.position.set(lerp(xp - 0.175, xr, 0.5) + 0.06, (yBase + 0.3 + yr - 0.05) / 2, 0);
   back.rotation.z = lean;
-  // Rod holders on a cross bar behind the backrest.
-  const yh = DECK_Y + 0.86;
-  rod(group, v3(xp - 0.17, yh, -0.3), v3(xp - 0.17, yh, 0.3), 0.012, m.stainless);
-  for (const z of [-0.2, 0, 0.2]) {
-    const a = v3(xp - 0.175, yh - 0.12, z);
-    const b = v3(xp - 0.235, yh + 0.12, z);
-    rod(group, a, b, 0.022, m.stainless);
-    const cap = add(group, new THREE.CircleGeometry(0.017, 12), m.rubber, { cast: false });
-    cap.position.copy(b).addScaledVector(b.clone().sub(a).normalize(), 0.0012);
-    cap.quaternion.setFromUnitVectors(v3(0, 0, 1), b.clone().sub(a).normalize());
+  // Rod holders: two a side on the module's outboard faces, raked about 15 degrees aft and 10
+  // outboard, each held off the face by two clamp blocks with a band round the tube. They stand
+  // clear of the bolster (z 0.35), the frame uprights (z 0.3) and the backrest.
+  const zFace = W / 2;
+  const rakeAft = Math.tan(15 * Math.PI / 180);
+  const rakeOut = Math.tan(10 * Math.PI / 180);
+  const hLen = 0.34;
+  for (const side of [-1, 1]) {
+    for (const x0 of [xp + 0.09, xp - 0.09]) {
+      const a = v3(x0, DECK_Y + 0.42, side * (zFace + 0.03));
+      const b = a.clone().add(v3(-rakeAft * hLen, hLen, side * rakeOut * hLen));
+      const dir = b.clone().sub(a).normalize();
+      rod(group, a, b, 0.022, m.stainless, 14);
+      const rim = add(group, new THREE.TorusGeometry(0.022, 0.004, 6, 16), m.stainless, { cast: false });
+      rim.position.copy(b);
+      rim.quaternion.setFromUnitVectors(v3(0, 0, 1), dir);
+      const cap = add(group, new THREE.CircleGeometry(0.018, 12), m.rubber, { cast: false });
+      cap.position.copy(b).addScaledVector(dir, -0.006);
+      cap.quaternion.copy(rim.quaternion);
+      for (const f of [0.15, 0.55]) {
+        const c = a.clone().lerp(b, f);
+        const gap = Math.abs(c.z) - zFace;
+        box(group, m.dash, [0.05, 0.045, gap], [c.x, c.y, side * (zFace + gap / 2 - 0.004)]);
+        const band = add(group, new THREE.CylinderGeometry(0.026, 0.026, 0.035, 14), m.dash);
+        band.position.copy(c);
+        band.quaternion.setFromUnitVectors(v3(0, 1, 0), dir);
+      }
+    }
   }
   // Footrest bar across the front.
   add(group, tube([v3(xp + 0.198, DECK_Y + 0.2, -0.27), v3(xp + 0.27, DECK_Y + 0.21, -0.24), v3(xp + 0.27, DECK_Y + 0.21, 0.24), v3(xp + 0.198, DECK_Y + 0.2, 0.27)], 0.0125, 16, 6), m.stainless);
