@@ -99,13 +99,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 @container (max-width: 900px) { .stage-hint { display: none; } }
 @container (max-width: 600px) {
   .stage-title { left: 16px; top: 14px; }
-  .stage-title { max-width: calc(100% - 172px); }
+  .stage-title { max-width: calc(100% - 214px); }
   .stage-title .eyebrow, #model-dims { display: none; }
   .stage-scene { right: 10px; top: 12px; }
-  .stage-scene button { min-height: 30px; padding: 4px 11px; font-size: 0.66rem; }
+  .stage-scene button { min-height: 30px; padding: 4px 10px; font-size: 0.64rem; letter-spacing: 0.04em; }
   .scene-note { top: 54px; right: 16px; }
   .stage-views { bottom: 12px; }
-  .stage-title h1 { font-size: 1.05rem; }
+  .stage-title h1 { font-size: 1rem; }
   .stage-views button { padding: 4px 9px; font-size: 0.64rem; letter-spacing: 0.04em; }
 }
 

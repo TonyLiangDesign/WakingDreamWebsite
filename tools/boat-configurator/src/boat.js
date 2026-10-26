@@ -401,8 +401,8 @@ function seat(group, m, x, z, pedestal) {
   foot.position.set(x, DECK_Y + 0.015, z);
   const cushion = add(group, new RoundedBoxGeometry(0.46, 0.12, 0.46, 3, 0.05), m.seat);
   cushion.position.set(x, DECK_Y + pedestal + 0.06, z);
-  const back = add(group, new RoundedBoxGeometry(0.1, 0.46, 0.46, 3, 0.04), m.seat);
-  back.position.set(x - 0.22, DECK_Y + pedestal + 0.3, z);
+  const back = add(group, new RoundedBoxGeometry(0.1, 0.32, 0.46, 3, 0.04), m.seat);
+  back.position.set(x - 0.22, DECK_Y + pedestal + 0.24, z);
   back.rotation.z = 0.12;
 }
 
@@ -443,8 +443,8 @@ function flushPanel(group, bezelMat, faceMat, centre, tilt, w, h) {
 function binnacle(group, m, x, y, z) {
   const body = add(group, new RoundedBoxGeometry(0.16, 0.1, 0.12, 2, 0.03), m.dash);
   body.position.set(x, y + 0.05, z);
-  rod(group, v3(x, y + 0.08, z), v3(x - 0.1, y + 0.19, z), 0.012, m.stainless, 8);
-  const knob = add(group, new THREE.SphereGeometry(0.03, 12, 8), m.rubber);
+  rod(group, v3(x, y + 0.08, z), v3(x - 0.1, y + 0.19, z), 0.014, m.stainless, 8);
+  const knob = add(group, new THREE.SphereGeometry(0.038, 14, 10), m.rubber);
   knob.position.set(x - 0.1, y + 0.2, z);
 }
 
@@ -472,10 +472,34 @@ function hardtop(group, lines, m, build) {
   const D = [x1 - 0.98, yR];
   const yTop = (x) => (x <= D[0] ? yR : x <= C[0] ? lerp(yR, C[1], (x - D[0]) / (C[0] - D[0])) : lerp(C[1], B2[1], (x - C[0]) / (x1 - C[0])));
   const wallZ = (x, y) => (y <= sideY(x) ? hw(x) : lerp(hw(x), hwT(x), (y - sideY(x)) / (yTop(x) - sideY(x))));
-  const xs = [...spaced(x0, D[0], 8), ...spaced(D[0], C[0], 6).slice(1), ...spaced(C[0], x1, 4).slice(1)];
 
-  const station = (x) => ({ x, pts: [[hw(x), DECK_Y], [hw(x), sideY(x)], [hw(x), sideY(x)], [hwT(x), yTop(x)], [hwT(x), yTop(x)], [0, yTop(x)]] });
-  add(group, ribbon(xs.map(station)), m.trim);
+  // Window openings: sills at yw0, heads at yw1 or under the raked screen.
+  const yw0 = yR - 0.72;
+  const yw1 = yR - 0.14;
+  const head = (x) => Math.min(yw1, yTop(x) - 0.1);
+  const xa = x0 + 0.12;
+  const xm = (x0 + C[0]) / 2 - 0.1;
+  // The forward pane stops where the raked screen comes down to the sill.
+  const xb = Math.min(C[0] - 0.12, D[0] + ((yR - yw0 - 0.3) / (yR - C[1])) * (C[0] - D[0]));
+  const panes = [[xa, xm - 0.04], [xm + 0.04, xb]];
+  const sx0 = D[0] + 0.05;
+  const sx1 = C[0] - 0.04;
+  const breaks = [x0, xa, xm - 0.04, xm + 0.04, xb, D[0], sx0, sx1, C[0], x1];
+  const xsAll = [...new Set([...spaced(x0, x1, 28), ...breaks].map((x) => +x.toFixed(4)))].sort((a, b) => a - b);
+  const within = (a, b) => xsAll.filter((x) => x >= a - 1e-4 && x <= b + 1e-4);
+
+  // Side walls: solid to the sills, open between sill and head, solid above and between panes.
+  const sill = (x) => Math.min(yw0, yTop(x));
+  add(group, ribbon(xsAll.map((x) => ({ x, pts: [[hw(x), DECK_Y], [hw(x), sideY(x)], [hw(x), sideY(x)], [wallZ(x, sill(x)), sill(x)]] }))), m.trim);
+  const solid = [[x0, xa], [xm - 0.04, xm + 0.04], [xb, x1]];
+  for (const [a, b] of solid) add(group, ribbon(within(a, b).map((x) => ({ x, pts: [[wallZ(x, sill(x)), sill(x)], [hwT(x), yTop(x)]] }))), m.trim);
+  for (const [a, b] of panes) add(group, ribbon(within(a, b).map((x) => ({ x, pts: [[wallZ(x, head(x)), head(x)], [hwT(x), yTop(x)]] }))), m.trim);
+  // Roof skin, open over the windscreen panes either side of a centre mullion.
+  const topSkin = (a, b, zo, zi) => add(group, ribbon(within(a, b).map((x) => ({ x, pts: [[zo(x), yTop(x)], [zi(x), yTop(x)]] }))), m.trim);
+  topSkin(x0, sx0, hwT, () => 0);
+  topSkin(sx1, x1, hwT, () => 0);
+  topSkin(sx0, sx1, hwT, (x) => hwT(x) - 0.05);
+  topSkin(sx0, sx1, () => 0.035, () => 0);
   const front = [[hw(x1), DECK_Y], [hw(x1), sideY(x1)], [hwT(x1), yTop(x1)], [-hwT(x1), yTop(x1)], [-hw(x1), sideY(x1)], [-hw(x1), DECK_Y]];
   add(group, crossSection(front, x1), m.trim);
 
@@ -483,33 +507,26 @@ function hardtop(group, lines, m, build) {
   const decks = spaced(x0, x1, 10).map((x) => section(x / L)).map((s) => ({ x: s.x, pts: [[hw(s.x), sideY(s.x)], [s.inner, sideY(s.x)]] }));
   add(group, ribbon(decks), m.nonslip);
 
-  // Framed side windows with a sliding-pane split, and nav lights forward.
-  const yw0 = yR - 0.72;
-  const yw1 = yR - 0.14;
-  const pane = (xa, xb, inset, lift) => ribbon(spaced(xa, xb, 6).map((x) => {
-    const top = Math.min(yw1, yTop(x) - 0.1) - inset;
-    const bottom = yw0 + inset;
-    return { x, pts: [[wallZ(x, bottom) + lift, bottom], [wallZ(x, top) + lift, top]] };
-  }));
-  const xa = x0 + 0.12;
-  const xm = (x0 + C[0]) / 2 - 0.1;
-  // The forward pane stops where the raked screen comes down to the sill.
-  const xb = Math.min(C[0] - 0.12, D[0] + ((yR - yw0 - 0.3) / (yR - C[1])) * (C[0] - D[0]));
-  for (const [a, b] of [[xa, xm - 0.04], [xm + 0.04, xb]]) {
-    add(group, pane(a, b, 0, 0.004), m.rubber, { cast: false });
-    add(group, pane(a + 0.03, b - 0.03, 0.03, 0.008), m.glass, { cast: false });
-    const xs2 = (a + b) / 2;
+  // Tinted glass in the openings, black frames round them, a sliding-pane split in each.
+  for (const [a, b] of panes) {
+    add(group, ribbon(within(a, b).map((x) => ({ x, pts: [[wallZ(x, yw0) + 0.004, yw0], [wallZ(x, head(x)) + 0.004, head(x)]] }))), m.glass, { cast: false });
+    const mid = (a + b) / 2;
     for (const side of [1, -1]) {
-      const top = Math.min(yw1, yTop(xs2) - 0.1) - 0.03;
-      rod(group, v3(xs2, yw0 + 0.03, side * (wallZ(xs2, yw0) + 0.012)), v3(xs2, top, side * (wallZ(xs2, top) + 0.012)), 0.007, m.galv, 6);
+      const at = (x, y) => v3(x, y, side * (wallZ(x, y) + 0.008));
+      const outline = [...spaced(a, b, 4).map((x) => at(x, yw0)), ...spaced(b, a, 4).map((x) => at(x, head(x)))];
+      add(group, tube(outline, 0.011, 64, 5, true), m.rubber, { cast: false });
+      rod(group, at(mid, yw0 + 0.02), at(mid, head(mid) - 0.02), 0.008, m.rubber, 6);
     }
   }
   for (const side of [1, -1]) navLight(group, m, x1 - 0.25, sideY(x1 - 0.25) + 0.12, side * (hw(x1 - 0.25) + 0.012));
 
-  // Raked windscreen: black frame, two panes either side of a centre mullion, wipers.
-  const screen = (inset, lift, zIn) => ribbon(spaced(D[0] + 0.05 + inset, C[0] - 0.04 - inset, 5).map((x) => ({ x, pts: [[hwT(x) - 0.05 - inset, yTop(x) + lift], [zIn, yTop(x) + lift]] })));
-  add(group, screen(0, 0.006, 0), m.rubber, { cast: false });
-  add(group, screen(0.03, 0.014, 0.035), m.glass, { cast: false });
+  // Raked windscreen: two see-through panes either side of a centre mullion, framed, with wipers.
+  add(group, ribbon(within(sx0, sx1).map((x) => ({ x, pts: [[hwT(x) - 0.05, yTop(x) + 0.004], [0.035, yTop(x) + 0.004]] }))), m.glass, { cast: false });
+  for (const side of [1, -1]) {
+    const at = (x, z) => v3(x, yTop(x) + 0.012, side * z);
+    const outline = [at(sx0, 0.035), at(sx1, 0.035), at(sx1, hwT(sx1) - 0.05), at((sx0 + sx1) / 2, hwT((sx0 + sx1) / 2) - 0.05), at(sx0, hwT(sx0) - 0.05)];
+    add(group, tube(outline, 0.011, 48, 5, true), m.rubber, { cast: false });
+  }
   for (const side of [1, -1]) {
     const a = v3(lerp(C[0], D[0], 0.18), lerp(C[1], yR, 0.18) + 0.03, side * 0.22);
     rod(group, a, v3(lerp(C[0], D[0], 0.62), lerp(C[1], yR, 0.62) + 0.03, side * 0.4), 0.007, m.rubber, 6);
@@ -526,7 +543,13 @@ function hardtop(group, lines, m, build) {
   roof.translate(0, yR + 0.02, 0);
   add(group, roof, m.trim);
   const sp = section((x0 - 0.42) / L);
-  for (const side of [1, -1]) rod(group, v3(x0 - 0.42, sp.ys, side * (sp.hb - CAP / 2)), v3(x0 - 0.42, yR + 0.02, side * (ra - 0.06)), 0.024, m.stainless);
+  // Aft legs land on the gunwale capping on base plates.
+  for (const side of [1, -1]) {
+    const foot = v3(x0 - 0.42, sp.ys, side * (sp.hb - CAP / 2));
+    rod(group, foot, v3(x0 - 0.42, yR + 0.02, side * (ra - 0.06)), 0.028, m.stainless);
+    const plate = add(group, new THREE.CylinderGeometry(0.06, 0.065, 0.014, 20), m.stainless);
+    plate.position.copy(foot).add(v3(0, 0.007, 0));
+  }
 
   // Roof grab rails, spotlight, VHF whip and all-round light.
   for (const side of [1, -1]) {
@@ -551,27 +574,32 @@ function hardtop(group, lines, m, build) {
   // Moulded dash with a raked face: flush MFD, switch panel, wheel on a tilt column,
   // throttle binnacle to starboard and a compass on top. Helm console below, cuddy to port.
   const dashX = C[0] - 0.18;
-  const dashW = 2 * hwT(dashX + 0.2) - 0.08;
   const dTop = C[1] + 0.05;
+  const dashW = 2 * wallZ(dashX + 0.18, dTop + 0.02) - 0.02;
   const fTop = [dashX - 0.04, dTop];
   const fBot = [dashX - 0.2, dTop - 0.26];
   const tilt = Math.atan2(fTop[0] - fBot[0], fTop[1] - fBot[1]);
   const nrm = v3(-Math.cos(tilt), Math.sin(tilt), 0);
   const onFace = (f, z, out = 0.012) => v3(lerp(fBot[0], fTop[0], f), lerp(fBot[1], fTop[1], f), z).addScaledVector(nrm, out);
   // Top sits just under the raked screen, the nose chamfered down to clear it.
-  add(group, extrudeProfile([[dashX + 0.18, DECK_Y + 0.62], [dashX + 0.18, C[1] - 0.1], [dashX + 0.08, dTop], fTop, fBot, [dashX - 0.2, DECK_Y + 0.62]], dashW, 0.02), m.dash);
-  box(group, m.deck, [0.04, 0.7, dashW], [dashX + 0.16, DECK_Y + 0.35, 0]);
+  // Moulded in the cabin colour wall to wall, with a dark glare shield on top.
+  add(group, extrudeProfile([[dashX + 0.18, DECK_Y + 0.62], [dashX + 0.18, C[1] - 0.1], [dashX + 0.08, dTop], fTop, fBot, [dashX - 0.2, DECK_Y + 0.62]], dashW, 0.01), m.trim);
+  box(group, m.dash, [0.13, 0.012, dashW - 0.02], [dashX + 0.02, dTop + 0.016, 0], { cast: false });
+  box(group, m.trim, [0.04, 0.7, 2 * hw(dashX + 0.16) - 0.02], [dashX + 0.16, DECK_Y + 0.35, 0]);
   const wheelZ = Math.min(hw(dashX) * 0.45, dashW / 2 - 0.22);
-  const consoleW = dashW / 2 - 0.02;
-  box(group, m.trim, [0.36, 0.62, consoleW], [dashX - 0.02, DECK_Y + 0.31, dashW / 2 - consoleW / 2]);
-  box(group, m.rubber, [0.01, 0.5, 0.42], [dashX + 0.135, DECK_Y + 0.33, -dashW / 4], { cast: false });
+  // Helm console down to the floor on the starboard side, against the cabin side.
+  const conZ0 = 0.06;
+  const conZ1 = hw(dashX) - 0.01;
+  box(group, m.trim, [0.38, 0.62, conZ1 - conZ0], [dashX - 0.01, DECK_Y + 0.31, (conZ0 + conZ1) / 2]);
+  box(group, m.dash, [0.01, 0.12, conZ1 - conZ0 - 0.06], [dashX - 0.205, DECK_Y + 0.08, (conZ0 + conZ1) / 2], { cast: false });
+  box(group, m.rubber, [0.01, 0.52, 0.44], [dashX + 0.135, DECK_Y + 0.34, -hw(dashX) / 2], { cast: false });
   flushPanel(group, m.rubber, m.screen, onFace(0.56, -0.08), tilt, 0.36, 0.19);
   flushPanel(group, m.rubber, m.dash, onFace(0.5, -(dashW / 2 - 0.16)), tilt, 0.16, 0.12);
   for (let i = 0; i < 5; i++) box(group, m.seat, [0.02, 0.025, 0.012], onFace(0.5, -(dashW / 2 - 0.22) + i * 0.03, 0.025).toArray(), { cast: false });
-  helmWheel(group, m, onFace(0.38, wheelZ, 0), nrm, 0.2);
+  helmWheel(group, m, onFace(0.38, wheelZ, 0), nrm, 0.22, 0.19);
   binnacle(group, m, dashX + 0.02, dTop, Math.min(wheelZ + 0.27, dashW / 2 - 0.1));
   compass(group, m, dashX + 0.03, dTop, wheelZ);
-  for (const side of [1, -1]) seat(group, m, dashX - 0.85, side * hw(dashX) * 0.45, 0.45);
+  for (const side of [1, -1]) seat(group, m, dashX - 0.98, side * hw(dashX) * 0.45, 0.42);
 
   if (build.options.includes('rocket')) rocketLauncher(group, m, roofAft + 0.14, yR + 0.09, ra * 1.5, 6);
 }
@@ -876,14 +904,36 @@ function trailer(lines, m) {
   return mergeStatic(g);
 }
 
+// Display cradle: timber keel blocks on bearers, one under the transom, and padded poppets
+// either side set to the deadrise.
 function cradle(lines, m) {
   const g = new THREE.Group();
-  for (const t of [0.24, 0.6]) {
-    const h = CRADLE_LIFT + lines.keel(t) - KEEL_BAR;
-    const block = add(g, new THREE.BoxGeometry(0.32, h, 0.5), m.wood);
-    block.position.set(t * lines.L, h / 2, 0);
+  const { L } = lines;
+  for (const t of [0.03, 0.3, 0.62]) {
+    const x = t * L;
+    const top = CRADLE_LIFT + lines.keel(t) - KEEL_BAR;
+    box(g, m.wood, [0.24, 0.12, 1.2], [x, 0.06, 0]);
+    const h = (top - 0.12) / 2;
+    box(g, m.wood, [0.34, h - 0.004, 0.4], [x, 0.12 + h / 2, 0]);
+    box(g, m.wood, [0.28, h, 0.32], [x + 0.012, 0.12 + h * 1.5, 0]);
+    box(g, m.rubber, [0.3, 0.012, 0.22], [x, top - 0.006, 0], { cast: false });
   }
-  return g;
+  for (const t of [0.2, 0.52]) {
+    const s = lines.section(t);
+    const f = 0.55;
+    const z = s.zc * f;
+    const y = CRADLE_LIFT + lerp(s.yk, s.yc, f);
+    for (const side of [1, -1]) {
+      const footZ = side * (z + 0.12);
+      box(g, m.galv, [0.32, 0.02, 0.32], [t * L, 0.01, footZ]);
+      rod(g, v3(t * L, 0.02, footZ), v3(t * L, y - 0.08, side * z), 0.035, m.galv);
+      rod(g, v3(t * L, y - 0.12, side * z), v3(t * L, y - 0.05, side * z), 0.05, m.galv);
+      const pad = add(g, new THREE.BoxGeometry(0.36, 0.05, 0.22), m.carpet);
+      pad.position.set(t * L, y - 0.028, side * z);
+      pad.rotation.x = -side * s.dr;
+    }
+  }
+  return mergeStatic(g);
 }
 
 // ---------- assembly ----------

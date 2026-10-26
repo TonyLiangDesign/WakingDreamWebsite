@@ -7,6 +7,8 @@ import {
 } from './config.js';
 import { createMaterials, applyBuild } from './materials.js';
 import { buildBoat, disposeTree, TRAILER_LIFT, CRADLE_LIFT } from './boat.js';
+
+const lerp = THREE.MathUtils.lerp;
 import { createSky, createWater, SUN_DIR, WL_STATIONS } from './water.js';
 import './style.css';
 
@@ -21,6 +23,8 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
+// One shadow update per frame, shared by the reflection pass and the main render.
+renderer.shadowMap.autoUpdate = false;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 4000);
@@ -32,7 +36,7 @@ controls.maxDistance = 32;
 controls.target.set(0, 1.4, 0);
 controls.autoRotate = !reduceMotion;
 controls.autoRotateSpeed = 0.35;
-controls.addEventListener('start', () => { controls.autoRotate = false; });
+controls.addEventListener('start', () => { controls.autoRotate = false; framed = null; });
 
 const pmrem = new THREE.PMREMGenerator(renderer);
 const studioEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -90,8 +94,13 @@ const mats = createMaterials();
 let build = fromHash(location.hash);
 let current = null;
 let lift = 0;
-// On the water the hull settles this far below its design waterline, so the chine sits under water.
-const SINK = 0.12;
+let framed = null;
+// Afloat the hull sits a little stern-down: the waterline is just above the chine at the
+// transom (WL_AFT) and falls towards the bow (WL_FWD), so only the forefoot clears the water.
+const WL_AFT = 0.22;
+const WL_FWD = 0.16;
+const SINK = (WL_AFT + WL_FWD) / 2;
+let trim = 0;
 
 function rebuild() {
   if (current) {
@@ -115,8 +124,10 @@ function applyScene() {
   current.trailer.visible = onTrailer;
   current.cradle.visible = !onWater && !onTrailer;
   lift = onWater ? -SINK : onTrailer ? TRAILER_LIFT : CRADLE_LIFT;
+  trim = onWater ? (WL_AFT - WL_FWD) / current.lines.L : 0;
+  rig = null;
   vessel.position.y = lift;
-  vessel.rotation.set(0, 0, 0);
+  vessel.rotation.set(0, 0, trim);
 
   sky.visible = water.visible = onWater;
   floor.visible = contact.visible = !onWater;
@@ -144,38 +155,101 @@ function applyScene() {
   contact.position.x = onTrailer ? 0.8 : 0;
   water.material.uniforms.uGlowOn.value = onWater && current.leds.length ? 1 : 0;
   // Waterline half-widths from the transom to where the forefoot leaves the water.
-  const wl = (t) => current.lines.bottomZ(current.lines.section(t), SINK);
+  const wl = (t) => current.lines.bottomZ(current.lines.section(t), lerp(WL_AFT, WL_FWD, t));
   let bow = 0.5;
   while (bow < 1 && wl(bow) > 0.001) bow += 0.005;
   water.material.uniforms.uHullX.value.set(-L / 2, L * bow);
   water.material.uniforms.uWl.value = Array.from({ length: WL_STATIONS + 1 }, (_, i) => wl((i / WL_STATIONS) * bow));
   controls.maxPolarAngle = onWater ? Math.PI * 0.485 : Math.PI * 0.49;
+  if (framed) refit();
 }
 
 // ---------- camera views ----------
 
+// Each preset is a direction only; the distance is fitted to the visible rig for the stage's
+// shape. The three-quarter view fits every heading, because auto-rotate swings round from it.
 const VIEWS = {
-  hero: { label: 'Three-quarter', pos: [5.6, 2.3, 6.35], target: [0.2, 0.95, 0] },
-  side: { label: 'Profile', pos: [0, 1.3, 10.8], target: [0, 1.0, 0] },
-  stern: { label: 'Stern', pos: [-7.0, 2.3, 3.4], target: [-0.6, 0.8, 0] },
-  bow: { label: 'Bow', pos: [7.4, 2.4, -3.2], target: [0.4, 0.9, 0] },
-  top: { label: 'Plan', pos: [0.01, 13, 0.4], target: [0, 0.5, 0] },
+  hero: { label: 'Three-quarter', dir: [5.4, 1.35, 6.35], spin: true },
+  side: { label: 'Profile', dir: [0, 0.3, 10.8] },
+  stern: { label: 'Stern', dir: [-6.4, 1.5, 3.4] },
+  bow: { label: 'Bow', dir: [7.0, 1.5, -3.2] },
+  top: { label: 'Plan', dir: [0.01, 12.5, 0.4] },
 };
+const FILL_H = 0.92;  // share of the stage width the rig may use
+const FILL_V = 0.76;  // and of its height, leaving room for the title and the view buttons
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 let flight = null;
 
-// Presets are framed for a 6.2 m hull in a wide stage; narrower stages pull the camera back,
-// and phones a little further, so the bow and the outboard stay in frame.
-function viewTargets(name) {
-  const v = VIEWS[name];
-  const phone = name !== 'top' && stage.clientWidth < 600 ? 1.18 : 1;
-  const k = (current.lines.L / 6.2) * Math.pow(Math.max(1, 1.6 / camera.aspect), 0.85) * phone;
-  const target = new THREE.Vector3(v.target[0], v.target[1] + lift, v.target[2]);
-  const pos = new THREE.Vector3(v.pos[0] - v.target[0], v.pos[1] - v.target[1], v.pos[2] - v.target[2]).multiplyScalar(k).add(target);
-  return { pos, target };
+// Points on what is on show: hull, engine and fit-out, plus the trailer or cradle. Rod blanks
+// are left out, so a rocket launcher may crop at the top rather than shrink the boat.
+let rig = null;
+function rigPoints() {
+  if (rig) return rig;
+  vessel.updateMatrixWorld(true);
+  stand.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  const points = [];
+  for (const part of [current.boat, current.trailer, current.cradle]) {
+    if (!part.visible) continue;
+    part.traverse((o) => {
+      if (!o.isMesh || o.material === mats.rod) return;
+      const pos = o.geometry.attributes.position;
+      const step = Math.max(1, Math.floor(pos.count / 500));
+      const ext = [];
+      for (let i = 0; i < pos.count; i++) {
+        const p = new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        box.expandByPoint(p);
+        if (i % step === 0) points.push(p);
+        // Keep each part's extremes so thin tips are never skipped by the sampling.
+        for (let k = 0; k < 3; k++) {
+          if (!ext[k * 2] || p.getComponent(k) < ext[k * 2].getComponent(k)) ext[k * 2] = p;
+          if (!ext[k * 2 + 1] || p.getComponent(k) > ext[k * 2 + 1].getComponent(k)) ext[k * 2 + 1] = p;
+        }
+      }
+      points.push(...ext);
+    });
+  }
+  return (rig = { box, points });
+}
+
+function fitDistance(points, centre, dir, aspect) {
+  const right = new THREE.Vector3().crossVectors(Y_AXIS, dir).normalize();
+  const up = new THREE.Vector3().crossVectors(dir, right);
+  const tV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * FILL_V;
+  const tH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * aspect * FILL_H;
+  const q = new THREE.Vector3();
+  let d = 0;
+  for (const p of points) {
+    q.subVectors(p, centre);
+    const depth = q.dot(dir);
+    d = Math.max(d, Math.abs(q.dot(right)) / tH + depth, Math.abs(q.dot(up)) / tV + depth);
+  }
+  return d;
+}
+
+function viewTargets(name, { spin = VIEWS[name].spin, aspect = camera.aspect } = {}) {
+  const { box, points } = rigPoints();
+  const target = box.getCenter(new THREE.Vector3());
+  const base = new THREE.Vector3(...VIEWS[name].dir).normalize();
+  const turns = spin ? 24 : 1;
+  let d = 0;
+  for (let i = 0; i < turns; i++) d = Math.max(d, fitDistance(points, target, base.clone().applyAxisAngle(Y_AXIS, (i / turns) * Math.PI * 2), aspect));
+  return { pos: target.clone().addScaledVector(base, d), target };
+}
+
+// After a resize or a rig change, keep the current heading but refit distance and centre.
+function refit() {
+  if (!framed || !current) return;
+  const to = viewTargets(framed);
+  const heading = camera.position.clone().sub(controls.target).normalize();
+  if (!VIEWS[framed].spin) heading.copy(to.pos).sub(to.target).normalize();
+  const pos = to.target.clone().addScaledVector(heading, to.pos.distanceTo(to.target));
+  flight = { from: camera.position.clone(), fromTarget: controls.target.clone(), pos, target: to.target, start: performance.now(), duration: reduceMotion ? 0 : 500 };
 }
 
 function flyTo(name, instant = false) {
   controls.autoRotate = false;
+  framed = name;
   const to = viewTargets(name);
   if (instant || reduceMotion) {
     camera.position.copy(to.pos);
@@ -511,9 +585,14 @@ function specShot() {
   renderer.setSize(1280, 720, false);
   camera.aspect = 1280 / 720;
   camera.updateProjectionMatrix();
-  const to = viewTargets('hero');
+  const to = viewTargets('hero', { spin: false, aspect: 1280 / 720 });
   camera.position.copy(to.pos);
   camera.lookAt(to.target);
+  camera.updateMatrixWorld();
+  if (build.scene === 'water') {
+    renderer.shadowMap.needsUpdate = true;
+    renderReflection(to.target);
+  }
   const out = snapshot();
   renderer.setSize(size.x, size.y, false);
   camera.aspect = saved.aspect;
@@ -549,6 +628,37 @@ function resize() {
   renderer.setSize(width, height, false);
   camera.aspect = width / Math.max(height, 1);
   camera.updateProjectionMatrix();
+  // Reflection at half resolution, less on small high-density screens.
+  const buffer = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const scale = devicePixelRatio > 1.5 && width < 700 ? 0.35 : 0.5;
+  mirrorRT.setSize(Math.max(1, Math.round(buffer.x * scale)), Math.max(1, Math.round(buffer.y * scale)));
+  refit();
+}
+
+// ---------- water reflection: the scene mirrored in y = 0, clipped at the surface ----------
+
+const mirrorCam = new THREE.PerspectiveCamera();
+const mirrorRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+const mirrorClip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)];
+const mirrorBias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+water.material.uniforms.tReflect.value = mirrorRT.texture;
+
+function renderReflection(target = controls.target) {
+  mirrorCam.copy(camera);
+  mirrorCam.position.set(camera.position.x, -camera.position.y, camera.position.z);
+  mirrorCam.up.copy(Y_AXIS).applyQuaternion(camera.quaternion).reflect(Y_AXIS);
+  mirrorCam.lookAt(target.x, -target.y, target.z);
+  mirrorCam.updateMatrixWorld();
+  water.material.uniforms.uMirror.value.multiplyMatrices(mirrorBias, mirrorCam.projectionMatrix).multiply(mirrorCam.matrixWorldInverse);
+  water.visible = false;
+  sky.position.copy(mirrorCam.position);
+  renderer.clippingPlanes = mirrorClip;
+  renderer.setRenderTarget(mirrorRT);
+  renderer.render(scene, mirrorCam);
+  renderer.setRenderTarget(null);
+  renderer.clippingPlanes = [];
+  water.visible = true;
+  sky.position.copy(camera.position);
 }
 new ResizeObserver(resize).observe(stage);
 
@@ -569,17 +679,18 @@ function frame(now) {
   if (build.scene === 'water') {
     const swell = reduceMotion ? 0 : 1;
     vessel.position.y = lift + Math.sin(t * 0.9) * 0.035 * swell;
-    vessel.rotation.z = Math.sin(t * 0.7 + 0.8) * 0.012 * swell;
+    vessel.rotation.z = trim + Math.sin(t * 0.7 + 0.8) * 0.01 * swell;
     vessel.rotation.x = Math.sin(t * 0.55) * 0.018 * swell;
     water.material.uniforms.uTime.value = reduceMotion ? 0 : t;
     current.leds.forEach((p, i) => {
-      glowPoint.copy(p).add(new THREE.Vector3(-0.9, 0, 0));
+      glowPoint.copy(p).add(new THREE.Vector3(-0.5, 0, 0));
       current.boat.localToWorld(glowPoint);
       water.material.uniforms.uGlow.value[i].copy(glowPoint);
     });
-    sky.position.copy(camera.position);
   }
   controls.update();
+  renderer.shadowMap.needsUpdate = true;
+  if (build.scene === 'water') renderReflection();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }

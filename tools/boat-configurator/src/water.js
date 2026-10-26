@@ -68,17 +68,22 @@ export function createWater() {
     uDeep: { value: new THREE.Color('#0b2631') },
     uGlow: { value: [new THREE.Vector3(), new THREE.Vector3()] },
     uGlowOn: { value: 0 },
-    uGlowColor: { value: new THREE.Color('#2f9cff') },
+    uGlowColor: { value: new THREE.Color('#4a9ad8') },
     uHullX: { value: new THREE.Vector2(-3, 6) },
     uWl: { value: new Array(WL_STATIONS + 1).fill(0) },
+    tReflect: { value: null },
+    uMirror: { value: new THREE.Matrix4() },
   };
   const material = new THREE.ShaderMaterial({
     uniforms,
     vertexShader: /* glsl */ `
+      uniform mat4 uMirror;
       varying vec3 vWorld;
+      varying vec4 vMirror;
       void main() {
         vec4 w = modelMatrix * vec4(position, 1.0);
         vWorld = w.xyz;
+        vMirror = uMirror * w;
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: /* glsl */ `
@@ -90,15 +95,17 @@ export function createWater() {
       uniform vec3 uGlowColor;
       uniform vec2 uHullX;
       uniform float uWl[${WL_STATIONS + 1}];
+      uniform sampler2D tReflect;
       varying vec3 vWorld;
+      varying vec4 vMirror;
 
-      // Sum of directional swells and chop; returns the surface slope.
+      // Sum of directional swells, chop and fine ripples; returns the surface slope.
       vec2 slope(vec2 p, float t, float fade) {
         vec2 g = vec2(0.0);
-        vec2 dirs[7] = vec2[7](vec2(1.0, 0.18), vec2(0.72, 0.69), vec2(-0.3, 0.95), vec2(0.94, -0.33), vec2(-0.82, 0.57), vec2(0.21, -0.98), vec2(0.55, 0.83));
-        float freq[7] = float[7](0.32, 0.55, 0.9, 1.6, 2.7, 4.3, 7.1);
-        float amp[7] = float[7](0.05, 0.032, 0.02, 0.012, 0.007, 0.004, 0.0025);
-        for (int i = 0; i < 7; i++) {
+        vec2 dirs[9] = vec2[9](vec2(1.0, 0.18), vec2(0.72, 0.69), vec2(-0.3, 0.95), vec2(0.94, -0.33), vec2(-0.82, 0.57), vec2(0.21, -0.98), vec2(0.55, 0.83), vec2(-0.64, -0.77), vec2(0.97, 0.24));
+        float freq[9] = float[9](0.32, 0.55, 0.9, 1.6, 2.7, 4.3, 7.1, 11.3, 17.9);
+        float amp[9] = float[9](0.05, 0.032, 0.02, 0.012, 0.007, 0.004, 0.0025, 0.0014, 0.0009);
+        for (int i = 0; i < 9; i++) {
           float f = freq[i];
           float speed = sqrt(9.8 * f) * 0.55;
           float phase = dot(p, normalize(dirs[i])) * f + t * speed + float(i) * 1.7;
@@ -125,25 +132,28 @@ export function createWater() {
         vec2 g = slope(vWorld.xz, uTime, fade) * (0.35 + 0.65 * fade);
         vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
         vec3 v = normalize(cameraPosition - vWorld);
-        float fres = 0.02 + 0.98 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 5.0);
+        float fres = 0.04 + 0.96 * pow(1.0 - clamp(dot(n, v), 0.0, 1.0), 5.0);
         vec3 r = reflect(-v, n);
         r.y = abs(r.y);
-        vec3 refl = skyColour(r);
         vec3 body = uDeep * (0.7 + 0.5 * max(dot(n, uSunDir), 0.0));
 
-        // Calm water in the lee of the hull, a dark reflection where it meets the topsides
-        // and a thin broken wash line at the waterline.
+        // Mirror image of the boat and sky, broken up by the surface slope; calmer in the lee.
         float d = max(hullDist(vWorld.xz), 0.0);
         float lee = exp(-d * 0.9);
-        vec3 col = mix(body, refl, fres * (1.0 - 0.55 * lee));
+        vec2 ruv = vMirror.xy / vMirror.w + g * (0.5 - 0.3 * lee);
+        vec3 refl = texture2D(tReflect, ruv).rgb;
+        vec3 col = mix(body, refl, fres);
         col += uSunColor * pow(max(dot(r, uSunDir), 0.0), 380.0) * 2.4 * (1.0 - lee);
-        col = mix(col, uDeep * 0.45, 0.6 * exp(-d / 0.16));
-        float broken = 0.55 + 0.45 * sin(vWorld.x * 9.0 + uTime * 1.3 + sin(vWorld.z * 13.0));
-        col += vec3(0.62, 0.64, 0.63) * exp(-pow(d / 0.035, 2.0)) * broken * 0.5;
 
+        // Dark band where the water meets the hull, and a thin broken wash line.
+        col = mix(col, uDeep * 0.35, 0.72 * exp(-d / 0.12));
+        float broken = 0.55 + 0.45 * sin(vWorld.x * 9.0 + uTime * 1.3 + sin(vWorld.z * 13.0));
+        col += vec3(0.62, 0.64, 0.63) * exp(-pow(d / 0.035, 2.0)) * broken * 0.4;
+
+        // Underwater lights: a soft patch seen through the surface, fading with reflection.
         for (int i = 0; i < 2; i++) {
-          vec2 d = vWorld.xz - uGlow[i].xz;
-          col += uGlowColor * uGlowOn * exp(-dot(d, d) * 1.6) * 0.75;
+          vec2 dl = vWorld.xz - uGlow[i].xz;
+          col += uGlowColor * uGlowOn * exp(-dot(dl, dl) * 3.5) * 0.3 * (1.0 - fres);
         }
         col = mix(col, skyColour(normalize(vec3(-v.x, 0.015, -v.z))), smoothstep(60.0, 1100.0, dist));
         gl_FragColor = vec4(col, 1.0);
