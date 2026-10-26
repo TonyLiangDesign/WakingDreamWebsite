@@ -39,11 +39,14 @@ const studioEnv = pmrem.fromScene(studioEnvironment(), 0.02).texture;
 const envScene = new THREE.Scene();
 const envSky = createSky();
 envSky.geometry = new THREE.SphereGeometry(50, 32, 16);
-// The environment's horizon is less saturated than the dome: clearcoat on dark topsides mirrors
-// it, and a full-strength sunset horizon turns navy and charcoal brown. The warmth stays in
-// the sun itself, the key light and the visible sky.
+// The environment is a desaturated copy of the visible sky. Clearcoat on dark topsides mirrors
+// its horizon, and a full-strength sunset horizon turns navy and charcoal brown; decks and roofs
+// take their diffuse light from its zenith, and a full blue zenith turns white surfaces blue
+// (the sun is only about 10 degrees up, so the key adds little to them). The warmth and the blue
+// stay in the sun, the key light and the visible sky.
 envSky.material.uniforms.uHorizon.value.set('#ddd3c9');
 envSky.material.uniforms.uAnti.value.set('#aeb9c6');
+envSky.material.uniforms.uTop.value.set('#a6a9ad');
 envScene.add(envSky);
 const waterEnv = pmrem.fromScene(envScene, 0.02).texture;
 
@@ -211,9 +214,10 @@ function applyScene(build) {
     key.intensity = 2.8;
     key.position.copy(SUN_DIR).multiplyScalar(20);
     rim.intensity = 0;
-    fill.color.set('#9cbbe6');
+    // Warm-neutral sky fill: upward-facing whites read white to slightly warm, not blue.
+    fill.color.set('#f4e2cc');
     fill.groundColor.set('#1a2a31');
-    fill.intensity = 1.2;
+    fill.intensity = 0.95;
   } else {
     key.color.set('#fffaf4');
     key.intensity = 1.8;
