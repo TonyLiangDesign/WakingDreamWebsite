@@ -157,8 +157,27 @@ boat builders. Nothing on the site links to it and it carries `noindex, nofollow
 by direct URL only. The Harbour series it configures is fictional: three plate-alloy hulls
 (5.5, 6.2 and 6.8 m), centre console or hardtop, seven topside colours, outboards up to twin
 200 hp and six options. Every part is procedural, so there are no model files. Options, demo
-NZD prices and the shareable `#m=…&l=…` build hash live in `src/config.js`. The enquiry form
-posts to formsubmit with the chosen build attached and returns to `/thank-you.html?p=boat`.
+NZD prices, the fictional dealer list and the shareable `#m=…&l=…` build hash live in
+`src/config.js`. The builder enquiry form at the bottom posts to formsubmit with the chosen build
+attached and returns to `/thank-you.html?p=boat`.
+
+The demo also shows what a builder gets beyond the 3D view:
+
+- **Dealer quote (step 06).** The buyer picks a region and leaves name, email and phone, then sees
+  "the lead your dealer receives": spec, full RRP, region, dealer, build link, lead ID and time.
+  Nothing is sent; this form has no action.
+- **Builder settings · demo.** Price display: full RRP with breakdown, a "from" price only, or no
+  prices (quote on request). Dealers always get the full price in the lead.
+- **Spec sheet.** A print-friendly page (print or save as PDF) with a three-quarter render, spec,
+  price per the price setting and the build link.
+- **Kiosk mode** for boat-show tablets: full screen on first touch, bigger targets, no pitch
+  section, and after 60 s idle it resets to the default boat and cycles paint until touched.
+  `?idle=8` shortens the timeout for testing.
+
+Hash keys: `m` model, `l` layout, `h` topsides, `t` trim, `e` engine, `c` cowling, `o` options
+(dot-separated), `s` scene (`studio`/`water`), `p` price display (`full`/`from`/`none`),
+`d` dealer region (`nl`, `ak`, `wb`, `wn`, `cb`, `os`) and `kiosk=1`. Older links without the new
+keys open with full prices and no dealer chosen.
 
 Source and pinned dependencies live in `tools/boat-configurator/`. To update the published files:
 
@@ -168,4 +187,7 @@ npm ci
 npm run build
 ```
 
-Commit both source changes and the generated `boat-configurator/` files.
+Commit both source changes and the generated `boat-configurator/` files. On Windows, a
+`node_modules` synced from a Mac through Dropbox will not run and Dropbox locks it (EBUSY). Copy
+`package*.json`, `index.html`, `vite.config.js` and `src/` to a folder outside Dropbox, run
+`npm ci` there, then `npx vite build --outDir <repo>/boat-configurator --emptyOutDir`.
