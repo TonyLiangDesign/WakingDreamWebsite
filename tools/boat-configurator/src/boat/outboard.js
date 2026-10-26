@@ -342,8 +342,9 @@ function outboard(m, hp, plateY, hand) {
     // Steering hoses up and over to a bulkhead fitting on the pod top.
     add(g, tube([v3(tilt.x, tilt.y + 0.02, s * 0.12), v3(tilt.x + 0.02, 0.07, s * 0.11), v3(0.06, 0.08, s * 0.08), v3(0.12, 0.035, s * 0.03)], 0.007, 16, 6), m.rubber);
   }
-  const fitting = add(g, new THREE.CylinderGeometry(0.024, 0.028, 0.012, 12), m.galv);
-  fitting.position.set(0.12, 0.036, 0);
+  // A 40 mm gland standing from the pod top (bedded into the mounting plate whatever its thickness).
+  const fitting = add(g, new THREE.CylinderGeometry(0.022, 0.028, 0.04, 12), m.galv);
+  fitting.position.set(0.12, 0.02, 0);
   rod(g, v3(tilt.x, tilt.y + 0.025, 0.04), v3(-0.13, 0.06, 0.04), 0.012, m.galv);
 
   // Swivel bracket and steering head, between the stern brackets.

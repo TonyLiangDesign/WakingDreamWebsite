@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { add, tube, rod, box, extrudeProfile, spaced, v3, lerp, clamp01 } from './kit.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+import { add, tube, rod, box, loft, spaced, v3, lerp, clamp01 } from './kit.js';
+import { DECK_Y } from './hull.js';
 
 // Deck fittings: rocket launcher and rods, nav lights, bowsprit with rollers and plough anchor,
-// chain into the hawse pipe, anchor-locker hatch, bow cleat, bow rail, and the underwater lights.
-// Each builds into the group it is given; underwaterLights() also returns the two lamp
-// positions (boat-local) for the water glow, which has exactly two slots.
-// allRoundLight() and bowNavLight() are here for the layouts to call (see navLight()).
+// chain into the hawse pipe, anchor-locker hatch, bow cleat, bow eye, bow rail, and the
+// underwater lights. Each builds into the group it is given; underwaterLights() also returns
+// the two lamp positions (boat-local) for the water glow, which has exactly two slots.
+// fittings.js owns the light geometry; cabin.js and console.js place navLight(), allRoundLight()
+// and bowNavLight(). bowEyePoint(lines) gives the trailer strap's hook point on the bow eye.
 
 const TUBE = 0.0145;  // 29 mm stainless tube for the bow rail, its stanchions and legs
 
@@ -16,54 +19,43 @@ function ownMaterials() {
   if (!own.line) {
     own.line = new THREE.MeshStandardMaterial({ color: '#c8b45a', roughness: 0.6 });
     own.reel = new THREE.MeshStandardMaterial({ color: '#2a2d31', metalness: 0.6, roughness: 0.35 });
-    own.anchor = new THREE.MeshStandardMaterial({ color: '#9a9fa2', metalness: 0.8, roughness: 0.5 });
+    // Polished stainless anchor, so it reads against the satin alloy sprit.
+    own.anchor = new THREE.MeshStandardMaterial({ color: '#d9dcde', metalness: 1, roughness: 0.2 });
+    // Clear-anodised, brushed alloy for the bowsprit (the brushed roughness map is set per build).
+    own.sprit = new THREE.MeshPhysicalMaterial({ color: '#b4babf', metalness: 0.85, roughness: 0.3, clearcoat: 0.2, clearcoatRoughness: 0.3 });
     own.white = new THREE.MeshStandardMaterial({ color: '#f2f2ee', emissive: '#fff8e8', emissiveIntensity: 0.5, roughness: 0.15 });
     own.hole = new THREE.MeshStandardMaterial({ color: '#0b0b0c', roughness: 0.95 });
+    own.blank = blankMaterial();
     for (const mat of Object.values(own)) mat.userData.shared = true;
   }
   return own;
+}
+
+// Rod blanks taper to a 5 mm tip, well under a pixel at hero distance, where they would break
+// up into dots. This material keeps every blank at least about one CSS pixel wide: the vertex
+// shader pushes each vertex out along its normal by half a pixel's worth of view-space length
+// at its depth. Close up the push is a fraction of a millimetre, so the real taper shows.
+function blankMaterial() {
+  const halfHeight = { value: 450 };
+  const size = new THREE.Vector2();
+  const mat = new THREE.MeshStandardMaterial({ color: '#16181a', roughness: 0.35 });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uHalfHeight = halfHeight;
+    shader.vertexShader = `uniform float uHalfHeight;\n${shader.vertexShader.replace('#include <project_vertex>', `
+      vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
+      float pixel = -mvPosition.z / ( projectionMatrix[ 1 ][ 1 ] * uHalfHeight );
+      mvPosition.xyz += normalize( normalMatrix * objectNormal ) * pixel * 0.5;
+      gl_Position = projectionMatrix * mvPosition;`)}`;
+  };
+  mat.customProgramCacheKey = () => 'rod-blank-min-width';
+  mat.onBeforeRender = (renderer) => { halfHeight.value = renderer.getSize(size).y / 2 || 450; };
+  return mat;
 }
 
 // Orients a mesh's local y axis along dir.
 function alongY(mesh, dir) {
   mesh.quaternion.setFromUnitVectors(v3(0, 1, 0), dir.clone().normalize());
   return mesh;
-}
-
-// Closed plate of thickness t through the surface f(u, v) -> Vector3: two skins and the rims
-// on every edge except v = 0 (left open where two plates meet along a spine).
-function slab(f, nu, nv, t) {
-  const grid = [];
-  for (let j = 0; j <= nv; j++) {
-    for (let i = 0; i <= nu; i++) {
-      const u = i / nu;
-      const v = j / nv;
-      const e = 1e-3;
-      const p = f(u, v);
-      const du = f(Math.min(1, u + e), v).sub(f(Math.max(0, u - e), v));
-      const dv = f(u, Math.min(1, v + e)).sub(f(u, Math.max(0, v - e)));
-      const n = du.cross(dv);
-      grid.push([p, n.lengthSq() > 1e-14 ? p.clone().addScaledVector(n.normalize(), t) : p.clone()]);
-    }
-  }
-  const position = [];
-  const quad = (a, b, c, d) => position.push(...a.toArray(), ...b.toArray(), ...c.toArray(), ...a.toArray(), ...c.toArray(), ...d.toArray());
-  const at = (i, j, s) => grid[j * (nu + 1) + i][s];
-  for (let j = 0; j < nv; j++) {
-    for (let i = 0; i < nu; i++) {
-      quad(at(i, j, 0), at(i + 1, j, 0), at(i + 1, j + 1, 0), at(i, j + 1, 0));
-      quad(at(i, j, 1), at(i, j + 1, 1), at(i + 1, j + 1, 1), at(i + 1, j, 1));
-    }
-  }
-  for (let i = 0; i < nu; i++) quad(at(i, nv, 0), at(i + 1, nv, 0), at(i + 1, nv, 1), at(i, nv, 1));
-  for (let j = 0; j < nv; j++) {
-    quad(at(0, j, 0), at(0, j, 1), at(0, j + 1, 1), at(0, j + 1, 0));
-    quad(at(nu, j, 0), at(nu, j + 1, 0), at(nu, j + 1, 1), at(nu, j, 1));
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
-  g.computeVertexNormals();
-  return g;
 }
 
 // ---------- rocket launcher ----------
@@ -75,7 +67,7 @@ function fishingRod(group, m, mats, base, dir) {
   const length = 1.95;
   alongY(add(group, new THREE.CylinderGeometry(0.0125, 0.0135, 0.38, 10), m.rubber), dir).position.copy(at(0.22));
   alongY(add(group, new THREE.CylinderGeometry(0.0105, 0.0115, 0.14, 10), m.rubber), dir).position.copy(at(0.48));
-  alongY(add(group, new THREE.CylinderGeometry(0.0024, 0.0082, length - 0.41, 8), m.rod), dir).position.copy(at((length + 0.41) / 2));
+  alongY(add(group, new THREE.CylinderGeometry(0.0024, 0.0082, length - 0.41, 8), mats.blank), dir).position.copy(at((length + 0.41) / 2));
   // Overhead reel on the upper side of the rod as it leans aft.
   const up = new THREE.Vector3().crossVectors(dir, v3(0, 0, 1)).normalize();
   const axle = new THREE.Vector3().crossVectors(up, dir).normalize();
@@ -100,39 +92,43 @@ function fishingRod(group, m, mats, base, dir) {
   }
 }
 
-// Rocket launcher on a roof or T-top: a stainless bar on bolted feet, count holders leaning aft
-// and fanned symmetrically outboard, a rod and reel in each. (x, y) is the mounting surface on
-// the centreline; width spans the outer holders. Mounted low (y under 1.8 m, behind the leaning
-// post) the bar is clamped forward to the post frame instead of standing on feet.
-export function rocketLauncher(group, m, xMount, y, width, count) {
+// Rocket launcher: count holders leaning aft and fanned symmetrically outboard, a rod and reel
+// in each, on a stainless bar. (x, y) is where the bar is seated on the centreline:
+//  - on a hardtop roof or T-top canopy, the tops of the layout's stand-offs: the bar rests on y,
+//    and bolted feet drop from it to whatever surface lies below (found by a downward ray
+//    against what the layout has already built), so it never floats on a crowned roof;
+//  - behind the leaning post (y less than 1.6 m above the cockpit floor; the post rail is at
+//    DECK_Y + 1.26, roofs and canopies at DECK_Y + 2 or more), the centre of the post's own
+//    top rail: the holders are welded to that rail inside its uprights, with no second bar.
+// width spans the outer holders.
+const seatRay = new THREE.Raycaster();
+export function rocketLauncher(group, m, x, y, width, count) {
   const mats = ownMaterials();
-  const onPost = y < 1.8;
-  const x = onPost ? xMount - 0.04 : xMount;   // set back a little from the post's backrest
-  const barY = y + (onPost ? 0.05 : 0.07);
-  const half = width / 2;
-  const bar0 = v3(x, barY, -half - 0.04);
-  const bar1 = v3(x, barY, half + 0.04);
-  rod(group, bar0, bar1, 0.016, m.stainless, 12);
-  for (const end of [bar0, bar1]) {
-    const cap = add(group, new THREE.SphereGeometry(0.016, 12, 8), m.stainless);
-    cap.position.copy(end);
-  }
-  const spacing = count > 1 ? width / (count - 1) : 0;
-  if (onPost) {
-    // Clamped to the tops of the leaning-post frame, 0.12 m forward and 0.06 m down.
-    for (const s of [1, -1]) {
-      const z = s * half;
-      rod(group, v3(x, barY, z), v3(xMount + 0.12, y - 0.06, z), 0.014, m.stainless);
-      const clamp = add(group, new THREE.CylinderGeometry(0.026, 0.026, 0.05, 12), m.stainless);
-      clamp.position.set(xMount + 0.12, y - 0.06, z);
-      clamp.rotation.z = 1.1;
-    }
-  } else {
+  const onPost = y < DECK_Y + 1.6;
+  const barY = onPost ? y : y + 0.016;
+  const half = onPost ? Math.min(width, 0.5) / 2 : width / 2;
+  const spacing = count > 1 ? (half * 2) / (count - 1) : 0;
+  if (!onPost) {
+    // Feet first, against the layout's surfaces only.
+    group.updateMatrixWorld(true);
+    const surfaces = group.children.filter((c) => c.isMesh);
     const feet = count > 4 ? [-half + spacing / 2, 0, half - spacing / 2] : [-half + spacing / 2, half - spacing / 2];
     for (const z of feet) {
-      rod(group, v3(x, y + 0.004, z), v3(x, barY, z), 0.015, m.stainless);
+      seatRay.set(v3(x, barY, z), v3(0, -1, 0));
+      seatRay.far = 0.4;
+      const hit = seatRay.intersectObjects(surfaces, false)[0];
+      const foot = hit ? hit.point.y : y - 0.06;
+      if (barY - foot < 0.025) continue;
+      rod(group, v3(x, foot + 0.004, z), v3(x, barY, z), 0.015, m.stainless);
       const base = add(group, new THREE.CylinderGeometry(0.034, 0.038, 0.012, 16), m.stainless);
-      base.position.set(x, y, z);
+      base.position.set(x, foot + 0.004, z);
+    }
+    const bar0 = v3(x, barY, -half - 0.04);
+    const bar1 = v3(x, barY, half + 0.04);
+    rod(group, bar0, bar1, 0.016, m.stainless, 12);
+    for (const end of [bar0, bar1]) {
+      const cap = add(group, new THREE.SphereGeometry(0.016, 12, 8), m.stainless);
+      cap.position.copy(end);
     }
   }
   for (let i = 0; i < count; i++) {
@@ -142,13 +138,13 @@ export function rocketLauncher(group, m, xMount, y, width, count) {
     const lean = 0.2 + 0.2 * Math.abs(f);
     const fan = 0.2 * f;
     const dir = v3(-Math.sin(lean), Math.cos(lean) * Math.cos(fan), Math.sin(fan)).normalize();
-    const base = v3(x, barY, z).addScaledVector(dir, -0.03);
+    const base = v3(x, barY, z).addScaledVector(dir, onPost ? -0.02 : -0.03);
     const top = base.clone().addScaledVector(dir, 0.27);
     rod(group, base, top, 0.022, m.stainless, 12);
     const lip = add(group, new THREE.TorusGeometry(0.022, 0.005, 6, 14), m.stainless);
     lip.position.copy(top);
     lip.quaternion.setFromUnitVectors(v3(0, 0, 1), dir);
-    fishingRod(group, m, mats, base.clone().addScaledVector(dir, 0.03), dir);
+    fishingRod(group, m, mats, base.clone().addScaledVector(dir, onPost ? 0.02 : 0.03), dir);
   }
 }
 
@@ -195,41 +191,192 @@ export function bowNavLight(group, m, x, y) {
 
 // ---------- bow ----------
 
+// Extrusion of an [x, y] outline across z with rounded edges: the bevel is inset so the outline
+// keeps its size, and the normals are creased so the rounds shade smoothly and flats stay flat.
+function rounded(points, depth, bevel, segments = 3) {
+  const shape = new THREE.Shape(points.map(([x, y]) => new THREE.Vector2(x, y)));
+  const core = Math.max(0.0005, depth - 2 * bevel);
+  const g = new THREE.ExtrudeGeometry(shape, { depth: core, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelOffset: -bevel, bevelSegments: segments, curveSegments: 8 });
+  g.translate(0, 0, -core / 2);
+  return toCreasedNormals(g, 0.75);
+}
+
+// Smooth [x, y] polyline through control points.
+const spline = (pts, n) => new THREE.SplineCurve(pts.map(([x, y]) => new THREE.Vector2(x, y))).getPoints(n).map((p) => [p.x, p.y]);
+
+// Linear lookup of y at x along a polyline sampled in x (either direction).
+function yOnLine(line, x) {
+  const pts = line[0][0] <= line[line.length - 1][0] ? line : [...line].reverse();
+  if (x <= pts[0][0]) return pts[0][1];
+  for (let i = 1; i < pts.length; i++) if (x <= pts[i][0]) return lerp(pts[i - 1][1], pts[i][1], (x - pts[i - 1][0]) / (pts[i][0] - pts[i - 1][0] || 1));
+  return pts[pts.length - 1][1];
+}
+
 // The bowsprit's lines, shared by bowFittings() and bowRail(): a box-section alloy sprit on the
-// foredeck, its channel floor rising with the sheer, cantilevered past the stem to a roller.
+// foredeck, its channel floor rising with the sheer just clear of the stem head, cantilevered
+// past the raked stem to the bow roller. Its underside follows the deck, then the stem bar's
+// leading edge (lines.stemX) down to its lowest point, then sweeps forward to the roller.
 function spritLines(lines) {
   const { L } = lines;
   const deck = (x) => lines.sheer(Math.min(x / L, 0.992)) - 0.05;   // foredeck surface (cockpit.js)
+  const stemX = lines.stemX || (() => L);
   const xa = L - 0.5;           // aft end, on the foredeck
-  const xe = L - 0.05;          // where the foredeck stops at the stem
+  const xe = L - 0.05;          // where the foredeck stops at the stem head
   const slope = (deck(xe) - deck(xa)) / (xe - xa);
-  const floor = (x) => deck(xe) + 0.06 + slope * (x - xe);   // channel floor, just above the stem head
-  const xr = L + 0.33;          // bow roller axle
+  const floor = (x) => Math.max(deck(xe), lines.sheer(1)) + 0.012 + slope * (x - L);   // channel floor
+  const xr = L + 0.34;          // bow roller axle
   const yr = floor(xr) + 0.03;
-  const cheek = (x) => floor(x) + (x < xa + 0.08 ? lerp(0.0, 0.035, (x - xa) / 0.08) : x < L + 0.05 ? lerp(0.035, 0.045, (x - xa - 0.08) / (L - xa - 0.03)) : lerp(0.045, 0.09, clamp01((x - L - 0.05) / (xr - L - 0.05))));
-  return { deck, xa, xe, floor, xr, yr, cheek, cz: 0.079 };
+  const rn = 0.066;             // cheek radius round the axle
+  // Underside: on the deck, down the stem bar to the low point, forward to the nose.
+  const yl = floor(L) - 0.11;
+  const stemDown = spaced(deck(xe), yl, 3).map((y) => [Math.min(xe, stemX(y) - 0.012), y]);
+  const forward = spline([stemDown[stemDown.length - 1], [L + 0.12, floor(L + 0.12) - 0.096], [xr - 0.09, yr - rn - 0.008], [xr - 0.02, yr - rn + 0.002]], 10).slice(1);
+  const bottom = [...spaced(xa + 0.02, xe, 6).map((x) => [x, deck(x) - 0.004]), ...stemDown.slice(1), ...forward];
+  // Cheek top: a shallow S from the tapered aft end up to the rounded nose.
+  const top = spline([[xr, yr + rn], [xr - 0.1, floor(xr - 0.1) + 0.074], [L + 0.02, floor(L + 0.02) + 0.05], [L - 0.24, floor(L - 0.24) + 0.032], [xa + 0.1, floor(xa + 0.1) + 0.036], [xa + 0.03, floor(xa) + 0.012]], 24);
+  const cheek = (x) => yOnLine(top, x);
+  return { deck, xa, xe, floor, xr, yr, rn, bottom, top, cheek, cz: 0.079 };
+}
+
+// Geometry from positions (indexed or not), normals computed, front faces turned along out.
+function facingGeometry(position, index, out) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  if (index) g.setIndex(index);
+  g.computeVertexNormals();
+  const n = g.attributes.normal;
+  let dot = 0;
+  for (let i = 0; i < n.count; i++) dot += n.getX(i) * out.x + n.getY(i) * out.y + n.getZ(i) * out.z;
+  if (dot < 0) {
+    if (index) {
+      for (let k = 0; k < index.length; k += 3) [index[k + 1], index[k + 2]] = [index[k + 2], index[k + 1]];
+      g.setIndex(index);
+    } else {
+      const p = g.attributes.position;
+      for (let k = 0; k < p.count; k += 3) {
+        const t = [p.getX(k + 1), p.getY(k + 1), p.getZ(k + 1)];
+        p.setXYZ(k + 1, p.getX(k + 2), p.getY(k + 2), p.getZ(k + 2));
+        p.setXYZ(k + 2, ...t);
+      }
+    }
+    g.computeVertexNormals();
+  }
+  return g;
+}
+
+// Plough share: two curved flukes meeting in a crisp ridge on the convex (forward) face, a hollow
+// on the face towards the shank, wings swept back from a rounded heel and a thickened, weighted
+// toe drawn to a point. C is the heel at the crown, a runs to the toe, fwd is the convex side.
+// Each fluke is its own smooth sheet, so the ridge and the plate edges stay crisp.
+function ploughShare(group, mat, C, a, fwd) {
+  const z = v3(0, 0, 1);
+  const len = 0.42;
+  const sm = (e0, e1, x) => { const u = clamp01((x - e0) / (e1 - e0)); return u * u * (3 - 2 * u); };
+  const W = (u) => 0.165 * (1 - u) ** 0.72 * Math.min(1, 0.62 + 3.2 * u) + 0.003;
+  const D = (u) => 0.075 * (1 - u) ** 0.55 + 0.008;
+  const T = (u, s) => (lerp(0.017, 0.006, s ** 0.8) + 0.026 * sm(0.62, 0.95, u) * (1 - s) ** 1.5) * (1 - 0.65 * sm(0.94, 1, u));
+  const outer = (u, s, side) => C.clone().addScaledVector(a, len * u).addScaledVector(z, side * s * W(u))
+    .addScaledVector(fwd, -D(u) * (1 - (1 - s) ** 1.3) + 0.02 * sm(0.72, 1, u) * (1 - s));
+  const inner = (u, s, side) => outer(u, s, side).addScaledVector(fwd, -T(u, s));
+  const nu = 18;
+  const ns = 10;
+  const sheet = (f, out) => {
+    const position = [];
+    const index = [];
+    for (let i = 0; i <= nu; i++) for (let j = 0; j <= ns; j++) position.push(...f(i / nu, j / ns).toArray());
+    for (let i = 0; i < nu; i++) {
+      for (let j = 0; j < ns; j++) {
+        const p = i * (ns + 1) + j;
+        index.push(p, p + ns + 1, p + 1, p + 1, p + ns + 1, p + ns + 2);
+      }
+    }
+    return facingGeometry(position, index, out);
+  };
+  // Flat-shaded rim between two matching edges.
+  const rim = (A, B, out) => {
+    const position = [];
+    for (let i = 0; i < A.length - 1; i++) position.push(...A[i].toArray(), ...A[i + 1].toArray(), ...B[i + 1].toArray(), ...A[i].toArray(), ...B[i + 1].toArray(), ...B[i].toArray());
+    return facingGeometry(position, null, out);
+  };
+  const us = spaced(0, 1, nu);
+  const ss = spaced(0, 1, ns);
+  for (const side of [1, -1]) {
+    add(group, sheet((u, s) => outer(u, s, side), fwd.clone().addScaledVector(z, side * 0.3)), mat);
+    add(group, sheet((u, s) => inner(u, s, side), fwd.clone().negate()), mat);
+    add(group, rim(us.map((u) => outer(u, 1, side)), us.map((u) => inner(u, 1, side)), z.clone().multiplyScalar(side)), mat);
+    add(group, rim(ss.map((s) => outer(0, s, side)), ss.map((s) => inner(0, s, side)), a.clone().negate()), mat);
+    add(group, rim(ss.map((s) => outer(1, s, side)), ss.map((s) => inner(1, s, side)), a), mat);
+  }
+}
+
+// ---------- bow eye ----------
+
+// The bow eye's frame on the stem: P on the stem bar's leading edge (lines.stemX) 0.35 m above
+// the keel line at the forefoot, T up the raked stem, N forward and square to it.
+function bowEyeFrame(lines) {
+  const y = lines.keel(0) + 0.35;
+  const stemX = lines.stemX || (() => lines.L);
+  const T = v3(stemX(y + 0.02) - stemX(y - 0.02), 0.04, 0).normalize();
+  const N = v3(T.y, -T.x, 0);
+  return { P: v3(stemX(y), y, 0), T, N };
+}
+
+// Where the trailer's winch strap hooks on: the inside of the bow eye's loop, boat-local.
+export function bowEyePoint(lines) {
+  const { P, N } = bowEyeFrame(lines);
+  return P.clone().addScaledVector(N, 0.056);
+}
+
+// Stainless U-bolt bow eye through the stem: a saddle plate on the stem bar, two legs one above
+// the other along the stem, and the loop standing out square to the stem in the centre plane.
+function bowEye(group, lines, m) {
+  const { P, T, N } = bowEyeFrame(lines);
+  const plate = add(group, new RoundedBoxGeometry(0.008, 0.1, 0.044, 2, 0.003), m.stainless);
+  plate.position.copy(P).addScaledVector(N, 0.002);
+  plate.quaternion.setFromUnitVectors(v3(0, 1, 0), T);
+  const leg = 0.032;
+  const r = 0.024;
+  const loop = [
+    P.clone().addScaledVector(T, -r),
+    P.clone().addScaledVector(T, -r).addScaledVector(N, leg),
+    ...spaced(Math.PI, 0, 8).map((a) => P.clone().addScaledVector(N, leg + r * Math.sin(a)).addScaledVector(T, r * Math.cos(a))).slice(1, -1),
+    P.clone().addScaledVector(T, r).addScaledVector(N, leg),
+    P.clone().addScaledVector(T, r),
+  ];
+  add(group, tube(loop, 0.0065, 28, 8), m.stainless);
+  for (const s of [-1, 1]) {
+    const nut = add(group, new THREE.CylinderGeometry(0.011, 0.011, 0.008, 6), m.stainless);
+    nut.position.copy(P).addScaledVector(T, s * r).addScaledVector(N, 0.009);
+    nut.quaternion.setFromUnitVectors(v3(0, 1, 0), N);
+  }
 }
 
 // Bowsprit with bow and keel rollers, plough anchor stowed over the bow roller with its chain
-// running down the channel into the hawse pipe, anchor-locker hatch and bow cleat.
+// running down the channel into the hawse pipe, anchor-locker hatch, bow cleat and bow eye.
 export function bowFittings(group, lines, m) {
   const { L } = lines;
   const mats = ownMaterials();
+  mats.sprit.roughnessMap = m.alloy.roughnessMap || null;
   const sp = spritLines(lines);
-  const { deck, xa, xe, floor, xr, yr, cheek, cz } = sp;
+  const { deck, xa, floor, xr, yr, rn, bottom, top, cz } = sp;
+  bowEye(group, lines, m);
 
-  // Sprit body: bottom on the deck and down the stem head, top is the channel floor.
-  const bottom = [...spaced(xa, xe, 6).map((x) => [x, deck(x) - 0.004]), [L + 0.005, floor(L) - 0.1], [xr - 0.12, floor(xr - 0.12) - 0.075], [xr - 0.045, floor(xr - 0.045) - 0.06]];
-  add(group, extrudeProfile([...bottom, [xr - 0.045, floor(xr - 0.045)], [xa, floor(xa)]], 0.146, 0.003), m.alloy);
-  // Cheek plates either side, rounded round the roller axle at the nose.
-  const nose = spaced(-Math.PI / 2, Math.PI / 2, 8).map((a) => [xr + 0.06 * Math.cos(a), yr + 0.06 * Math.sin(a)]);
-  const top = spaced(xr - 0.02, xa, 14).map((x) => [x, cheek(x)]);
-  const cheekShape = [...bottom.slice(0, -1), [xr - 0.04, yr - 0.062], ...nose, ...top];
-  for (const s of [1, -1]) add(group, extrudeProfile(cheekShape, 0.006, 0.002), m.alloy).position.z = s * cz;
+  // Sprit body between the cheeks: the box under the channel floor, its aft end chamfered down
+  // to the deck and its forward end closed under the roller by a curved fairing plate.
+  const xn = xr - 0.058;
+  const bodyBottom = bottom.filter(([x]) => x < xn).map(([x, y]) => [x, y + 0.006]);
+  const body = [...bodyBottom, [xn, yOnLine(bottom, xn) + 0.006], [xn, floor(xn) - 0.004], [xa + 0.1, floor(xa + 0.1) - 0.004], [xa + 0.035, deck(xa) + 0.026]];
+  add(group, rounded(body, 0.148, 0.006), mats.sprit);
+  const fairing = [...spaced(-2.9, -0.14, 12).map((t) => [xr + 0.057 * Math.cos(t), yr + 0.057 * Math.sin(t)]), ...spaced(-0.14, -2.9, 12).map((t) => [xr + 0.05 * Math.cos(t), yr + 0.05 * Math.sin(t)])];
+  add(group, rounded(fairing, 0.148, 0.0025, 2), mats.sprit);
+  // Cheek plates: profiled outline, rounded round the axle at the nose, edges radiused.
+  const nose = spaced(-1.95, Math.PI / 2, 12).map((t) => [xr + rn * Math.cos(t), yr + rn * Math.sin(t)]);
+  const cheekShape = [...bottom, ...nose, ...top.slice(1)];
+  for (const s of [1, -1]) add(group, rounded(cheekShape, 0.01, 0.0035), mats.sprit).position.z = s * cz;
 
   // Bow roller (V-spool) and keel roller, on through-bolted axles.
   const spool = [[0, -0.068], [0.042, -0.068], [0.042, -0.058], [0.03, -0.014], [0.027, 0], [0.03, 0.014], [0.042, 0.058], [0.042, 0.068], [0, 0.068]];
-  const roller = add(group, new THREE.LatheGeometry(spool.map(([r, a]) => new THREE.Vector2(r, a)), 18), m.rubber);
+  const roller = add(group, new THREE.LatheGeometry(spool.map(([r, q]) => new THREE.Vector2(r, q)), 18), m.rubber);
   roller.position.set(xr, yr, 0);
   roller.rotation.x = Math.PI / 2;
   const xk = xr - 0.42;
@@ -241,51 +388,55 @@ export function bowFittings(group, lines, m) {
     rod(group, v3(x, y, -cz - 0.012), v3(x, y, cz + 0.012), 0.008, m.stainless, 8);
     for (const s of [1, -1]) {
       const nut = add(group, new THREE.CylinderGeometry(0.013, 0.013, 0.01, 6), m.stainless);
-      nut.position.set(x, y, s * (cz + 0.009));
+      nut.position.set(x, y, s * (cz + 0.01));
       nut.rotation.x = Math.PI / 2;
     }
   }
 
-  // Plough anchor: shank resting on both rollers, curving down over the bow roller to the crown;
-  // the share hangs ahead of the roller, point down and back, clear of the stem.
+  // Plough anchor: a forged shank resting on both rollers, deepening and thinning towards the
+  // crown as it curves down over the bow roller, a crown boss with its pin, and the share
+  // hanging ahead of the roller with its toe down and back, clear of the stem.
   const t1 = v3(xr, yr + 0.042, 0);
   const t2 = v3(xk, yk + 0.02, 0);
   const e = t1.clone().sub(t2).normalize();
   const n = v3(-e.y, e.x, 0);
-  const crown = v3(xr + 0.12, yr - 0.005, 0);
+  const crown = v3(xr + 0.14, yr - 0.01, 0);
   const shankPath = new THREE.CatmullRomCurve3([
     t2.clone().addScaledVector(e, -0.2).addScaledVector(n, 0.016),
-    t2.clone().addScaledVector(n, 0.016),
-    t1.clone().addScaledVector(n, 0.02),
-    v3(xr + 0.07, yr + 0.05, 0),
+    t2.clone().addScaledVector(n, 0.017),
+    t1.clone().addScaledVector(n, 0.021),
+    v3(xr + 0.085, yr + 0.047, 0),
     crown,
   ], false, 'centripetal');
-  const pts = shankPath.getPoints(24);
-  const edge = (sgn) => pts.map((p, i) => {
-    const q = pts[Math.min(pts.length - 1, i + 1)].clone().sub(pts[Math.max(0, i - 1)]).normalize();
-    const hh = lerp(0.015, 0.022, i / (pts.length - 1)) * sgn;
-    return [p.x - q.y * hh, p.y + q.x * hh];
+  const rings = spaced(0, 1, 30).map((u) => {
+    const p = shankPath.getPointAt(u);
+    const t = shankPath.getTangentAt(u);
+    const nn = v3(-t.y, t.x, 0).normalize();
+    const h = lerp(0.016, 0.025, u ** 1.6);     // section depth grows into the bend
+    const w = lerp(0.0125, 0.0085, u);          // thickness tapers to the crown
+    return Array.from({ length: 16 }, (_, j) => {
+      const ang = (j / 16) * Math.PI * 2;
+      const c = Math.cos(ang);
+      const s = Math.sin(ang);
+      return p.clone().addScaledVector(nn, h * Math.sign(s) * Math.abs(s) ** 0.5).addScaledVector(v3(0, 0, 1), w * Math.sign(c) * Math.abs(c) ** 0.5);
+    });
   });
-  add(group, extrudeProfile([...edge(1), ...edge(-1).reverse()], 0.016, 0.003), mats.anchor);
+  add(group, loft(rings), mats.anchor);
   const a = v3(-Math.sin(0.42), -Math.cos(0.42), 0);
   const fwd = v3(Math.cos(0.42), -Math.sin(0.42), 0);
-  const block = add(group, new RoundedBoxGeometry(0.036, 0.05, 0.036, 2, 0.008), mats.anchor);
-  block.position.copy(crown).addScaledVector(a, 0.02);
-  block.rotation.z = 0.42;
-  for (const s of [1, -1]) {
-    const flank = slab((u, w) => {
-      const half = 0.17 * (1 - u) ** 0.8 * Math.min(1, 0.55 + u * 4);
-      const across = half * w;
-      return crown.clone().addScaledVector(a, 0.4 * u).add(v3(0, 0, s * across)).addScaledVector(fwd, -0.7 * across ** 1.08);
-    }, 10, 5, 0.007 * s);
-    add(group, flank, mats.anchor);
-  }
+  const boss = add(group, new THREE.CylinderGeometry(0.019, 0.019, 0.064, 18), mats.anchor);
+  boss.position.copy(crown).addScaledVector(fwd, -0.014).addScaledVector(a, 0.03);
+  boss.rotation.x = Math.PI / 2;
+  const pin = add(group, new THREE.CylinderGeometry(0.009, 0.009, 0.078, 10), m.galv);
+  pin.position.copy(boss.position);
+  pin.rotation.x = Math.PI / 2;
+  ploughShare(group, mats.anchor, crown, a, fwd);
 
-  // Shackle, chain down the channel and the hawse pipe at the aft end of the sprit.
+  // Shackle, chain down the channel and the hawse pipe near the aft end of the sprit.
   const shackleAt = t2.clone().addScaledVector(e, -0.215).addScaledVector(n, 0.014);
   const shackle = add(group, new THREE.TorusGeometry(0.016, 0.005, 6, 12), m.stainless);
   shackle.position.copy(shackleAt);
-  const hawse = v3(xa + 0.07, floor(xa + 0.07), 0);
+  const hawse = v3(xa + 0.14, floor(xa + 0.14), 0);
   const ring = add(group, new THREE.TorusGeometry(0.03, 0.006, 6, 18), m.stainless);
   ring.position.copy(hawse).add(v3(0, 0.003, 0));
   ring.rotation.x = Math.PI / 2;
@@ -320,7 +471,7 @@ export function bowFittings(group, lines, m) {
   // Anchor-locker hatch: alloy frame and lid laid to the deck's slope, two hinges aft, flush
   // lift ring forward. It stays clear of the cleat and of the cabin or console bulkhead.
   const fwdEdge = xc - 0.07;
-  const aftLimit = 0.8 * L + 0.08;
+  const aftLimit = 0.8 * L + 0.1;     // clear of the bow bicolour console.js puts at 0.8 L + 0.04
   const len = Math.min(0.4, fwdEdge - aftLimit);
   if (len > 0.2) {
     const xh = fwdEdge - len / 2;
@@ -362,8 +513,8 @@ export function bowRail(group, lines, m) {
   const sheer = (x) => lines.sheer(Math.min(1, x / L));
   const railY = (x) => sheer(x) + h;
   const zSide = (x) => section(x / L).hb - 0.075;
-  const x0 = 0.62 * L;
-  const xK = 0.9 * L;
+  const x0 = 0.75 * L;         // aft end just ahead of the hardtop front (0.72 L plus its raked centre panel)
+  const xK = 0.92 * L;
   const xF = L + 0.1;
   const bend = 0.08;
 
@@ -373,7 +524,7 @@ export function bowRail(group, lines, m) {
   const plan = spaced(x0 + bend, xK, 14).map((x) => [x, zSide(x)]);
   const sK = (zSide(xK + 0.01) - zSide(xK - 0.01)) / 0.02;
   const zK = zSide(xK);
-  const D = 0.6 * Math.hypot(xF - xK, zK);
+  const D = 0.45 * Math.hypot(xF - xK, zK);
   const t0 = [D / Math.hypot(1, sK), (D * sK) / Math.hypot(1, sK)];
   const hermite = (t) => {
     const h00 = 2 * t ** 3 - 3 * t * t + 1;
@@ -415,14 +566,19 @@ export function bowRail(group, lines, m) {
 
 // ---------- underwater lights ----------
 
-// Surface-mount LED lights on the aft faces of the boarding pods, low enough to stay under the
-// static waterline (about 0.22 m above the keel datum at the transom). Anchors from cockpit().
-export function underwaterLights(group, m, { zi, platY, bottomAt, aft }) {
+// Surface-mount LED lights in stainless bezels on the aft face of the engine pod, either side of
+// the leg(s) and low on the vee: with the hull's chine only about 5 cm under the static
+// waterline at the transom (about y = 0.22 there), the boarding pods are too shallow to keep a
+// lamp submerged, so the lights sit where the pod is deepest. Single engine: 0.25 m either side
+// of the centreline, outboard of the stern brackets. Twin: 0.13 m either side of the centreline,
+// between the two legs. Anchors come from cockpit(); exactly two lamps for the water glow.
+export function underwaterLights(group, m, { podHalf, bottomAt, aft }) {
   const leds = [];
-  const faceX = aft - 0.012;     // the pods' aft faces, bevel included
+  const faceX = aft - 0.012;     // the pod's aft face, bevel included
+  const zl = podHalf > 0.5 ? 0.13 : Math.min(0.25, podHalf - 0.15);
   for (const side of [-1, 1]) {
-    const z = side * (zi + 0.14);
-    const y = Math.min(platY - 0.1, bottomAt(zi + 0.14) + 0.1);
+    const z = side * zl;
+    const y = Math.min(0.1, bottomAt(zl) + 0.12);
     const bezel = add(group, new THREE.CylinderGeometry(0.056, 0.06, 0.014, 24), m.stainless);
     bezel.position.set(faceX - 0.007, y, z);
     bezel.rotation.z = Math.PI / 2;
