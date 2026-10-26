@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { add, tube, rod, box, crossSection, ribbon, loft, spaced, v3, lerp } from './kit.js';
-import { DECK_Y, CAP, KEEL_BAR } from './hull.js';
+import { DECK_Y, CAP, KEEL_BAR, topsideMaterial } from './hull.js';
 
 // Cockpit and transom: toned inner liner with a rolled coaming edge and a cove at the floor, padded
 // coaming bolsters over open side pockets, smooth-bordered non-slip floor panels with a flush
@@ -20,8 +20,7 @@ export const POD = 0.5;         // boarding pods and engine pod, aft of the tran
 const POD_BEVEL = 0.012;
 const T = 0.1;                  // inner transom thickness
 const NONSLIP_TILE = 0.16;      // metres per texture tile: 16 diamonds, a 10 mm pitch
-const POCKET = [DECK_Y + 0.11, DECK_Y + 0.27];  // side pocket opening, bottom and top
-const STEP_RISE = 0.1;          // transom step, then the same again to the door sill
+const STEP_RISE = 0.12;         // transom step, then the same again to the door sill (at least)
 const X0 = 0.006;               // liner and floor start just forward of the transom skin
 
 // ---------- part materials (cached; shared so disposeTree() leaves them alone) ----------
@@ -215,18 +214,28 @@ export function cockpit(group, lines, m, build, twin) {
   const xEnd = (fore + 0.02) * L;
   const s0 = section(0);
 
-  // Liner: rolled edge under the capping, a flat face, and a cove into the floor. Forward, where
-  // the vee rises above the floor at the sides, the foot follows the bottom plates in.
+  // Liner: rolled edge tucked under the capping's inner lip, a flat face, and a cove into the
+  // floor. Wherever the plating comes inside the liner face (forward, where the vee rises), the
+  // foot steps in to stay 30 mm inside the hull; the floor edge is clipped the same way.
   const face = (s) => s.inner - 0.01;
+  const insideAt = (s, z) => {
+    // Lowest height at which the outside of the hull is at least 30 mm outboard of z.
+    let lo = s.yk;
+    let hi = s.ys;
+    for (let i = 0; i < 24; i++) {
+      const mid = (lo + hi) / 2;
+      if (lines.halfWidth(s, mid) >= z + 0.03) hi = mid;
+      else lo = mid;
+    }
+    return hi;
+  };
   const foot = (s) => {
     const f = face(s);
-    const yb = (z) => (z >= s.zc ? s.yc : lerp(s.yk, s.yc, z / s.zc)) + 0.03;
-    const zE = (s.zc * (DECK_Y - 0.03 - s.yk)) / Math.max(1e-3, s.yc - s.yk);
-    const edge = Math.min(f - 0.035, zE);
-    const yLow = Math.max(DECK_Y + 0.035, yb(f));
+    const edge = Math.min(f - 0.035, lines.halfWidth(s, DECK_Y - 0.03) - 0.005);
+    const yLow = Math.max(DECK_Y + 0.035, insideAt(s, f));
     return { edge, cove: [[f, yLow], [f, yLow], [lerp(f, edge, 0.29), lerp(yLow, DECK_Y, 0.71)], [edge, DECK_Y]] };
   };
-  const roll = (s) => [[s.inner, s.ys], [s.inner - 0.005, s.ys - 0.004], [face(s), s.ys - 0.016], [face(s), s.ys - 0.016]];
+  const roll = (s) => [[s.inner - 0.0035, s.ys - 0.012], [s.inner - 0.006, s.ys - 0.02], [face(s), s.ys - 0.03], [face(s), s.ys - 0.03]];
 
   // Coaming bolsters run aft from the hardtop or the console; the side pockets sit under them.
   const bolsterEnd = ht ? 0.38 * L - 0.05 : 0.5 * L;
@@ -234,7 +243,9 @@ export function cockpit(group, lines, m, build, twin) {
   const xp1 = Math.min(xp0 + 1.5, bolsterEnd - 0.25);
   const xs = [...new Set([...spaced(X0, xEnd, 44), xp0, xp1].map((x) => +x.toFixed(4)))].sort((a, b) => a - b).map(S);
   const range = (a, b) => xs.filter((s) => s.x >= a - 1e-4 && s.x <= b + 1e-4);
-  const [yP0, yP1] = POCKET;
+  // Pocket opening just under the bolsters, kept clear of the floor on a shallow cockpit.
+  const yP1 = s0.ys - 0.23;
+  const yP0 = Math.max(DECK_Y + 0.1, yP1 - 0.17);
   for (const [a, b] of [[0, xp0], [xp1, xEnd]]) add(group, ribbon(range(a, b).map((s) => ({ x: s.x, pts: [...roll(s), ...foot(s).cove] }))), k.liner);
   const pocket = range(xp0, xp1);
   add(group, ribbon(pocket.map((s) => ({ x: s.x, pts: [...roll(s), [face(s), yP1 + 0.012]] }))), k.liner);
@@ -284,7 +295,11 @@ export function cockpit(group, lines, m, build, twin) {
   const foredeck = spaced(fore, 0.992, 16).map(section);
   add(group, planarUV(ribbon(foredeck.map((s) => ({ x: s.x, pts: [[0, s.ys - 0.05], [Math.max(0, s.hb - CAP * 0.5), s.ys - 0.05]] })))), k.nonslip);
   const bulk = section(fore);
-  if (!ht) box(group, k.liner, [0.02, bulk.ys - 0.05 - DECK_Y, foot(bulk).edge * 2 + 0.07], [bulk.x, (bulk.ys - 0.05 + DECK_Y) / 2, 0]);
+  if (!ht) {
+    // Bulkhead face following the liner's own section, so it never reaches past the plating.
+    const half = [[face(bulk), bulk.ys - 0.05], ...foot(bulk).cove.filter((_, i) => i !== 1)];
+    add(group, crossSection([...half, ...half.slice().reverse().map(([z, y]) => [-z, y])], bulk.x), k.liner);
+  }
 
   // Gunwales: flush rod holders, stern-quarter cleats, fuel filler to starboard.
   const flangeShape = [[0.021, 0], [0.036, 0], [0.038, 0.0015], [0.034, 0.0042], [0.024, 0.0042], [0.021, 0.001]].map(([r, y]) => new THREE.Vector2(r, y));
@@ -308,8 +323,14 @@ export function cockpit(group, lines, m, build, twin) {
 
   // ---------- transom ----------
 
+  // Hull-coloured parts take the topside material (the paint, or mill-finish plate on bare-alloy
+  // builds); bottoms take the hull's bottom plate, which topsideMaterial() returns for a bare build.
+  const topside = topsideMaterial(m);
+  const plate = topsideMaterial({ paint: { metalness: 1 } });
   const podHalf = twin ? 0.66 : 0.4;
-  const podTop = s0.ys - 0.12;
+  // Engine mounting surface at 25" (XL) shaft height: 635 mm above the keel plus the 30 mm the
+  // anti-ventilation plate sits above the bottom at the transom.
+  const podTop = lines.keel(0) + 0.03 + 0.635;
   const platY = s0.yc + 0.2;
   const zi = podHalf + 0.05;
   const bottomAt = (z) => lerp(s0.yk, s0.yc, z / s0.zc);
@@ -318,16 +339,17 @@ export function cockpit(group, lines, m, build, twin) {
   const ys = s0.ys;
 
   // Door to the port boarding platform: open-topped, hinged on its outboard edge, latched inboard.
-  // It clears the engine pod, so on twins it is narrower. A step inside halves the rise to the sill.
+  // It clears the engine pod, so on twins it is narrower. The sill stands two equal rises above
+  // the floor and never below the platform outside; a step inside takes the first rise.
   const dOut = tw - 0.05;
   const dIn = Math.max(podHalf + 0.02, dOut - 0.44);
-  const stepTop = DECK_Y + STEP_RISE;
-  const ySill = stepTop + STEP_RISE;
+  const ySill = Math.max(DECK_Y + 2 * STEP_RISE, platY + 0.03);
+  const stepTop = (DECK_Y + ySill) / 2;
 
   // Outer transom skin, notched for the doorway.
-  const outline = [[s0.hb, ys], [s0.zn, s0.yn], [s0.zf, s0.yf], [s0.zc, s0.yc], [0, s0.yk]];
+  const outline = [[s0.hb, ys], [s0.zn, s0.yn], [s0.zp, s0.yp], [s0.zf, s0.yf], [s0.zc, s0.yc], [0, s0.yk]];
   const skin = [...outline, ...outline.slice(0, -1).reverse().map(([z, y]) => [-z, y]), [-dOut, ys], [-dOut, ySill], [-dIn, ySill], [-dIn, ys]];
-  add(group, crossSection(skin, 0), m.paint);
+  add(group, crossSection(skin, 0), topside);
 
   // Inner transom either side of and below the doorway, bedded into the liner at its ends.
   // Its aft face stands just forward of the skin, clear of it.
@@ -339,8 +361,8 @@ export function cockpit(group, lines, m, build, twin) {
   box(group, k.liner, [tIn, ys - DECK_Y + 0.01, deep + dIn], [txc, (ys + DECK_Y - 0.01) / 2, (deep - dIn) / 2]);
   // Capping across the transom top in the hull colour, broken at the door; alloy sill plate.
   const capY = ys - 0.004;
-  rbox(group, m.paint, [T + 0.03, 0.017, s0.hb - 0.004 - dOut], [T / 2, capY, -(s0.hb - 0.004 + dOut) / 2], 0.006);
-  rbox(group, m.paint, [T + 0.03, 0.017, s0.hb - 0.004 + dIn], [T / 2, capY, (s0.hb - 0.004 - dIn) / 2], 0.006);
+  rbox(group, topside, [T + 0.03, 0.017, s0.hb - 0.004 - dOut], [T / 2, capY, -(s0.hb - 0.004 + dOut) / 2], 0.006);
+  rbox(group, topside, [T + 0.03, 0.017, s0.hb - 0.004 + dIn], [T / 2, capY, (s0.hb - 0.004 - dIn) / 2], 0.006);
   box(group, m.alloy, [T + 0.02, 0.008, dOut - dIn], [T / 2, ySill - 0.002, -(dOut + dIn) / 2]);
 
   // The door: a moulded panel with its own capping, rubber seals in the gaps, two barrel hinges.
@@ -348,7 +370,7 @@ export function cockpit(group, lines, m, build, twin) {
   const dz1 = -dIn - 0.006;
   const dzc = (dz0 + dz1) / 2;
   rbox(group, k.liner, [0.045, ys - 0.012 - ySill - 0.006, dz1 - dz0], [T - 0.0225, (ys - 0.012 + ySill + 0.006) / 2, dzc], 0.008);
-  rbox(group, m.paint, [T + 0.03, 0.017, dz1 - dz0], [T / 2, capY, dzc], 0.006);
+  rbox(group, topside, [T + 0.03, 0.017, dz1 - dz0], [T / 2, capY, dzc], 0.006);
   for (const z of [-dOut + 0.003, -dIn - 0.003]) box(group, m.rubber, [0.05, ys - 0.012 - ySill, 0.005], [T - 0.025, (ys - 0.012 + ySill) / 2, z], { cast: false });
   for (const y of [ySill + 0.07, ys - 0.09]) {
     const barrel = add(group, new THREE.CylinderGeometry(0.009, 0.009, 0.06, 12), m.stainless);
@@ -397,29 +419,32 @@ export function cockpit(group, lines, m, build, twin) {
 
   // Welded pods: the hull's chine and vee carried aft, boarding platforms either side of the engine
   // pod, all one plate structure with chamfered aft edges and a weld seam at the transom.
+  // The engine pod stands up from the platforms, or sits down in a well between them, to the
+  // engine mounting height; when the two all but coincide the top is one flat deck.
   const zO = lines.sideZ(s0, platY);
-  const profile = [[zO, platY], [s0.zf, s0.yf], [s0.zc, s0.yc], [0, s0.yk], [-s0.zc, s0.yc], [-s0.zf, s0.yf], [-zO, platY],
-    [-podHalf, platY], [-podHalf, podTop], [podHalf, podTop], [podHalf, platY]];
-  // Bottom plates and chine shelves in bare alloy like the hull's; sides, tops and aft faces painted.
-  const [podSides, podBottom] = prism(profile, aftFace, 0, POD_BEVEL, (a, b) => a.y < platY - 0.01 && b.y < platY - 0.01);
-  add(group, podSides, m.paint);
-  add(group, podBottom, m.alloy);
+  const enginePod = Math.abs(podTop - platY) > 0.015 ? [[-podHalf, platY], [-podHalf, podTop], [podHalf, podTop], [podHalf, platY]] : [];
+  const profile = [[zO, platY], [s0.zp, s0.yp], [s0.zf, s0.yf], [s0.zc, s0.yc], [0, s0.yk], [-s0.zc, s0.yc], [-s0.zf, s0.yf], [-s0.zp, s0.yp], [-zO, platY], ...enginePod];
+  // Bottom plates, chine shelves and the band under the paint line in plate like the hull's;
+  // sides, tops and aft faces in the topside finish.
+  const low = (a, b) => a.y <= s0.yp + 1e-4 && b.y <= s0.yp + 1e-4;
+  const [podSides, podBottom] = prism(profile, aftFace, 0, POD_BEVEL, low);
+  add(group, podSides, topside);
+  add(group, podBottom, plate);
   profile.forEach(([z, y], i) => {
     const [z2, y2] = profile[(i + 1) % profile.length];
-    rod(group, v3(-0.004, y, z), v3(-0.004, y2, z2), 0.004, y < platY - 0.01 && y2 < platY - 0.01 ? m.alloy : m.paint, 6).castShadow = false;
+    rod(group, v3(-0.004, y, z), v3(-0.004, y2, z2), 0.004, low({ y }, { y: y2 }) ? plate : topside, 6).castShadow = false;
   });
   const padX0 = aftFace + POD_BEVEL + 0.03;
   const padX1 = -0.035;
   for (const side of [1, -1]) {
-    rod(group, v3(0.002, s0.yf, side * (s0.zf + 0.002)), v3(aftFace + POD_BEVEL, s0.yf, side * (s0.zf + 0.002)), 0.007, m.alloy, 5);
+    rod(group, v3(0.002, s0.yf, side * (s0.zf + 0.002)), v3(aftFace + POD_BEVEL, s0.yf, side * (s0.zf + 0.002)), 0.006, plate, 5);
     const pz0 = podHalf + 0.035;
     const pz1 = zO - 0.035;
     add(group, flat(rrect((padX0 + padX1) / 2, side * (pz0 + pz1) / 2, padX1 - padX0, pz1 - pz0, 0.03), [], platY + 0.0015), k.nonslip, { cast: false });
   }
   // Keel bar carried on under the pod, closed off at its aft end.
-  const keelBar = add(group, new THREE.CylinderGeometry(KEEL_BAR / 2 + 0.004, KEEL_BAR / 2 + 0.004, -aftFace - 0.004 + 0.02, 6), m.alloy);
-  keelBar.position.set((aftFace + 0.004 + 0.02) / 2, s0.yk - KEEL_BAR / 2, 0);
-  keelBar.rotation.z = Math.PI / 2;
+  // Same flat bar on edge as the hull's: 22 mm wide, KEEL_BAR deep, bedded 6 mm into the plate.
+  rbox(group, plate, [-aftFace - 0.006 + 0.02, KEEL_BAR + 0.006, 0.022], [(aftFace + 0.006 + 0.02) / 2, s0.yk - (KEEL_BAR - 0.006) / 2, 0], 0.008);
   // Alloy mounting plate on the engine pod, through-bolted.
   box(group, m.alloy, [POD - 0.03, 0.012, podHalf * 2 - 0.05], [-POD / 2 - 0.01, podTop + 0.006, 0]);
   for (const x of [-0.08, -0.38]) {
