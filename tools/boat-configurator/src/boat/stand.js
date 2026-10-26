@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { add, tube, loft, mergeStatic, spaced, v3, lerp, clamp01 } from './kit.js';
 import { KEEL_BAR } from './hull.js';
+import { bowEyePoint } from './fittings.js';
 
 // Stands: the braked trailer and the studio display cradle, each sized to the hull lines and
 // returned as its own merged group. TRAILER_LIFT and CRADLE_LIFT are the heights of the hull's
@@ -187,11 +188,11 @@ function spangle() {
         }
       }
       const facet = (ox * p.dx + oy * p.dy) / cell;
-      const v = 0.9 + 0.08 * p.shade + 0.02 * facet + (Math.random() - 0.5) * 0.025;
+      const v = 0.92 + 0.045 * p.shade + 0.012 * facet + (Math.random() - 0.5) * 0.02;
       const k = (y * S + x) * 4;
       col.data[k] = col.data[k + 1] = col.data[k + 2] = Math.max(0, Math.min(255, v * 255));
       col.data[k + 3] = 255;
-      const r = 0.46 + 0.2 * p.rough + 0.03 * facet;
+      const r = 0.5 + 0.11 * p.rough + 0.02 * facet;
       rgh.data[k] = rgh.data[k + 1] = rgh.data[k + 2] = Math.max(0, Math.min(255, r * 255));
       rgh.data[k + 3] = 255;
     }
@@ -897,7 +898,9 @@ export function trailer(lines, m) {
 
   // Winch post, snubber arm and winch. The rubber vee snubber is tilted to the stem's rake, its
   // faces slope back with the bow, and it is pushed aft until it bears on the stem.
-  const yEye = lines.keel(0) + 0.55;
+  // The strap hooks the boat's own bow eye (fittings.js), so the snubber and winch line up with it.
+  const eyeP = bowEyePoint(lines);
+  const yEye = eyeP.y;
   const ySnub = yEye + 0.16;
   const rake = Math.atan((lines.stemX(ySnub + 0.02) - lines.stemX(ySnub - 0.02)) / 0.04);
   const cr = Math.cos(rake);
@@ -956,15 +959,9 @@ export function trailer(lines, m) {
   const crankEnd = pin.clone().add(v3(0.04, -0.2, 0.02));
   rhs(g, pin.clone().add(v3(0, 0, 0.012)), crankEnd, 0.02, 0.008, M.galv);
   bar(g, crankEnd, crankEnd.clone().add(v3(0, 0, 0.1)), 0.014, m.rubber, 10);
-  // Bow eye: a U-bolt square to the raked stem. The strap leaves the bottom of the drum and its
-  // hook wraps the front of the eye.
+  // The strap leaves the bottom of the drum and its hook wraps the boat's bow eye.
   const eyeRake = Math.atan((lines.stemX(yEye + 0.02) - lines.stemX(yEye - 0.02)) / 0.04);
-  const eyeAt = v3(lines.stemX(yEye), eye, 0);
-  const out = v3(Math.cos(eyeRake), -Math.sin(eyeRake), 0);
-  const ring = add(g, new THREE.TorusGeometry(0.022, 0.0065, 6, 18), M.galv);
-  ring.position.copy(eyeAt).addScaledVector(out, 0.016);
-  ring.rotation.z = -eyeRake;
-  const hookC = eyeAt.clone().addScaledVector(out, 0.0445);
+  const hookC = v3(eyeP.x, eye, 0);
   const hook = add(g, new THREE.TorusGeometry(0.015, 0.005, 6, 14, Math.PI * 1.5), M.galv);
   hook.position.copy(hookC);
   hook.quaternion.setFromUnitVectors(v3(0, 0, 1), v3(Math.sin(eyeRake), Math.cos(eyeRake), 0));
