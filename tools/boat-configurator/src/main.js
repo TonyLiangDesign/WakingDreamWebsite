@@ -348,8 +348,10 @@ syncControls();
 document.fonts.ready.then(() => {
   rebuild();
   resize();
-  flyTo('hero', true);
-  controls.autoRotate = !reduceMotion;
+  // ?qaView=side holds a fixed view with no auto-rotate, for repeatable QA screenshots.
+  const qaView = new URLSearchParams(location.search).get('qaView');
+  flyTo(qaView || 'hero', true);
+  controls.autoRotate = !reduceMotion && !qaView;
   startLoop(camera, controls, stepCamera);
   requestAnimationFrame(() => $('#loading').classList.add('done'));
 });
