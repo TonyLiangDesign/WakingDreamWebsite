@@ -29,64 +29,118 @@ controls.enableDamping = true;
 controls.minDistance = 3;
 controls.maxDistance = 40;
 controls.target.set(0, 1.4, 0);
-controls.autoRotate = !reduceMotion;
-controls.autoRotateSpeed = 0.35;
+controls.autoRotate = false;
+controls.autoRotateSpeed = 0;
+// Auto-rotate is slow and eases up to speed (stepCamera sets the speed every frame).
+const SPIN_SPEED = 0.4;  // OrbitControls units: 2.4 degrees a second, a turn in two and a half minutes
+const SPIN_RAMP = 2.5;   // seconds to ease up to full speed
+let spinClock = 0;
 controls.addEventListener('start', () => { controls.autoRotate = false; framed = null; flight = null; });
 
 // ---------- camera views ----------
 
 // Each preset is a direction only; target and distance are fitted to the rig for the stage.
+// az: degrees round from the starboard beam (+z) towards the bow (+x); el: degrees above level.
+// The three-quarter views share one flattering elevation; the profile is a true side elevation
+// (level, so the camera sits at the height of the rig's centre, about the sheer); the plan
+// looks straight down with the bow to the right.
+const QUARTER_EL = 15;
 const VIEWS = {
-  hero: { label: 'Three-quarter', dir: [5.4, 1.35, 6.35], spin: true },
-  side: { label: 'Profile', dir: [0, 0.3, 10.8] },
-  stern: { label: 'Stern', dir: [-6.4, 1.5, 3.4] },
-  bow: { label: 'Bow', dir: [7.0, 1.5, -3.2] },
-  top: { label: 'Plan', dir: [0.01, 12.5, 0.4] },
+  hero: { label: 'Three-quarter', az: 40, el: QUARTER_EL, spin: true },
+  side: { label: 'Profile', az: 0, el: 0 },
+  stern: { label: 'Stern', az: -62, el: QUARTER_EL },
+  bow: { label: 'Bow', az: 115, el: QUARTER_EL },
+  top: { label: 'Plan', az: 0, el: 89.99 },
 };
-const SPIN_STEPS = 72;
+const SPIN_STEPS = 144;  // every 2.5 degrees
 
 // Safe area in normalised device coordinates (-1..1), from the stage overlays (see main.js).
 let safe = { l: -0.94, r: 0.94, b: -0.8, t: 0.72 };
-// The spec sheet has no overlays: even margins all round.
-const SHEET_SAFE = { l: -0.9, r: 0.9, b: -0.9, t: 0.9 };
+// The spec sheet has no overlays: even margins at the sides and below, and more headroom, so a
+// rocket launcher's rods rise into the picture instead of being cut at its top edge.
+const SHEET_SAFE = { l: -0.88, r: 0.88, b: -0.86, t: 0.66 };
 
-// Points on what is on show. Rod blanks are left out, so a rocket launcher may crop at the top
-// rather than shrink the boat. Afloat, points below the surface are lifted to it: the water
-// hides them, so they must not push the boat up the frame.
+// Points on what is on show. Rod blanks, reels and the VHF whip are left out, so a rocket
+// launcher crops at the top of the frame rather than shrinking the boat:
+//  - any mesh flagged userData.noFit, on the mesh or on its material, is skipped (the boat is
+//    merged by material at the end of buildBoat, so the material flag is the one that survives);
+//  - as a fallback for unflagged parts, thin geometry (tubes, blanks and small fittings, made
+//    only of narrow or short triangles) that rises clear of the highest solid surface, the
+//    hardtop roof or the T-top canopy, is skipped too.
+// Afloat, points below the surface are lifted to it: the water hides them, so they must not
+// push the boat up the frame.
+const SOLID_WIDTH = 0.02;   // a triangle at least this wide across its longest edge...
+const SOLID_LENGTH = 0.1;   // ...and at least this long is solid surface
+const THIN_CLEAR = 0.12;    // thin geometry more than this above the solid top is ignored
+const noFit = (o) => o.userData.noFit === true || o.material?.userData?.noFit === true;
 let rig = null;
 function rigPoints() {
   if (rig) return rig;
   vessel.updateMatrixWorld(true);
   stand.updateMatrixWorld(true);
-  const box = new THREE.Box3();
-  const points = [];
-  const p = new THREE.Vector3();
+  const meshes = [];
   for (const part of [current.boat, current.trailer, current.cradle]) {
     if (!part.visible) continue;
-    part.traverse((o) => {
-      if (!o.isMesh || o.material === mats.rod) return;
-      const pos = o.geometry.attributes.position;
-      const step = Math.max(1, Math.floor(pos.count / 400));
-      const ext = [];
-      for (let i = 0; i < pos.count; i++) {
-        p.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
-        if (onWater && p.y < 0) p.y = 0;
-        box.expandByPoint(p);
-        if (i % step === 0) points.push(p.clone());
-        // Keep each part's extremes, diagonals included, so thin tips are never sampled away.
-        const keys = [p.x, p.y, p.z, p.x + p.z, p.x - p.z, p.x + p.y, p.y - p.x];
-        for (let k = 0; k < keys.length; k++) {
-          if (!ext[k * 2] || keys[k] < ext[k * 2].v) ext[k * 2] = { v: keys[k], p: p.clone() };
-          if (!ext[k * 2 + 1] || keys[k] > ext[k * 2 + 1].v) ext[k * 2 + 1] = { v: keys[k], p: p.clone() };
-        }
+    part.traverse((o) => { if (o.isMesh && o.material !== mats.rod && !noFit(o)) meshes.push({ o, boat: part === current.boat }); });
+  }
+  // World positions, and which vertices belong to a solid (wide and long) triangle.
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3();
+  let solidTop = -Infinity;
+  const parts = meshes.map(({ o, boat }) => {
+    const pos = o.geometry.attributes.position;
+    const world = new Float32Array(pos.count * 3);
+    for (let i = 0; i < pos.count; i++) a.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).toArray(world, i * 3);
+    const solid = new Uint8Array(pos.count);
+    const index = o.geometry.index;
+    const n = index ? index.count : pos.count;
+    for (let t = 0; t + 2 < n; t += 3) {
+      const i0 = index ? index.getX(t) : t;
+      const i1 = index ? index.getX(t + 1) : t + 1;
+      const i2 = index ? index.getX(t + 2) : t + 2;
+      a.fromArray(world, i0 * 3);
+      b.fromArray(world, i1 * 3);
+      c.fromArray(world, i2 * 3);
+      const longest = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a));
+      if (longest < SOLID_LENGTH) continue;
+      if (ab.subVectors(b, a).cross(ac.subVectors(c, a)).length() / longest < SOLID_WIDTH) continue;
+      solid[i0] = solid[i1] = solid[i2] = 1;
+      solidTop = Math.max(solidTop, a.y, b.y, c.y);
+    }
+    return { world, solid, boat };
+  });
+  const thinCut = solidTop + THIN_CLEAR;
+
+  const box = new THREE.Box3();
+  const points = [];
+  const boatPoints = [];  // the boat alone: hull, fit-out and engines
+  const p = new THREE.Vector3();
+  for (const { world, solid, boat } of parts) {
+    const step = Math.max(1, Math.floor(solid.length / 400));
+    const ext = [];
+    for (let i = 0; i < solid.length; i++) {
+      p.fromArray(world, i * 3);
+      if (!solid[i] && p.y > thinCut) continue;
+      if (onWater && p.y < 0) p.y = 0;
+      box.expandByPoint(p);
+      if (i % step === 0) {
+        points.push(p.clone());
+        if (boat) boatPoints.push(points[points.length - 1]);
       }
-      for (const e of ext) if (e) points.push(e.p);
-    });
+      // Keep each part's extremes, diagonals included, so thin tips are never sampled away.
+      const keys = [p.x, p.y, p.z, p.x + p.z, p.x - p.z, p.x + p.y, p.y - p.x];
+      for (let k = 0; k < keys.length; k++) {
+        if (!ext[k * 2] || keys[k] < ext[k * 2].v) ext[k * 2] = { v: keys[k], p: p.clone() };
+        if (!ext[k * 2 + 1] || keys[k] > ext[k * 2 + 1].v) ext[k * 2 + 1] = { v: keys[k], p: p.clone() };
+      }
+    }
+    for (const e of ext) if (e) points.push(e.p);
+    if (boat) for (const e of ext) if (e) boatPoints.push(e.p);
   }
   const centre = box.getCenter(new THREE.Vector3());
   let radius = 0;
   for (const q of points) radius = Math.max(radius, q.distanceTo(centre));
-  return (rig = { box, points: hullPoints(points, centre), centre, radius });
+  return (rig = { box, points: hullPoints(points, centre), boatPoints: hullPoints(boatPoints, centre), centre, radius, solidTop });
 }
 
 // Only the outermost points can touch a frame edge, so keep the support point for each of a few
@@ -120,6 +174,13 @@ function basis(dir) {
 
 // Exact distance for a view direction (target to camera) and target: a point at offset x across
 // and depth z towards the camera is inside the edge e when d >= x / (e * tan) + z.
+//
+// The boat itself (hull, fit-out and engines) is also held to BOAT_FILL of the frame width, so a
+// boat on a cradle or afloat, with nothing ahead of the bow, keeps the same air round it as one
+// whose trailer drawbar reaches out ahead: about 75-80% of the stage either way. BOAT_FILL_V
+// does the same for its height, so the near end-on bow and stern views don't loom.
+const BOAT_FILL = 0.8;
+const BOAT_FILL_V = 0.68;
 function solve(dir, aspect, area, target) {
   const { right, up } = basis(dir);
   const tanH = TAN_V * aspect;
@@ -131,6 +192,24 @@ function solve(dir, aspect, area, target) {
     const y = q.dot(up);
     const z = q.dot(dir);
     d = Math.max(d, x / ((x >= 0 ? area.r : area.l) * tanH) + z, y / ((y >= 0 ? area.t : area.b) * TAN_V) + z);
+  }
+  // The caps, in NDC where the frame is 2 across. Projected size shrinks about as 1 / d, so a
+  // few rescales settle on them.
+  for (let k = 0; k < 4; k++) {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of rigPoints().boatPoints) {
+      q.subVectors(p, target);
+      const depth = Math.max(0.1, d - q.dot(dir));
+      const nx = q.dot(right) / (depth * tanH);
+      const ny = q.dot(up) / (depth * TAN_V);
+      if (nx < x0) x0 = nx;
+      if (nx > x1) x1 = nx;
+      if (ny < y0) y0 = ny;
+      if (ny > y1) y1 = ny;
+    }
+    const over = Math.max((x1 - x0) / (BOAT_FILL * 2), (y1 - y0) / (BOAT_FILL_V * 2));
+    if (over <= 1.002) break;
+    d *= over;
   }
   return d;
 }
@@ -166,10 +245,12 @@ function fit(dir, aspect, area, start = rigPoints().centre) {
   return { target, d };
 }
 
-const presetDir = (name) => new THREE.Vector3(...VIEWS[name].dir).normalize();
-const HERO_AZ = Math.atan2(VIEWS.hero.dir[0], VIEWS.hero.dir[2]);
-const HERO_ELEV = Math.asin(presetDir('hero').y);
-const spinDir = (az) => new THREE.Vector3(Math.sin(az) * Math.cos(HERO_ELEV), Math.sin(HERO_ELEV), Math.cos(az) * Math.cos(HERO_ELEV));
+const DEG = Math.PI / 180;
+const azElDir = (az, el) => new THREE.Vector3(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+const presetDir = (name) => azElDir(VIEWS[name].az * DEG, VIEWS[name].el * DEG);
+const HERO_AZ = VIEWS.hero.az * DEG;
+const HERO_ELEV = VIEWS.hero.el * DEG;
+const spinDir = (az) => azElDir(az, HERO_ELEV);
 
 // Fits all the way round at the hero elevation. Targets are smoothed so the orbit centre glides;
 // each distance is then the largest exact fit for those targets one step either side, smoothed
@@ -265,11 +346,14 @@ export function flyTo(name, instant = false) {
   startFlight(viewTargets(name), instant ? 0 : 1100);
 }
 
-// Called after auto-rotate is switched on, so the camera starts the orbit from the hero fit.
-export function startSpin() {
+// Starts auto-rotate from the hero fit: still for delay seconds (and while a flight is under
+// way), then easing up to speed.
+export function startSpin(delay = 0) {
   if (reduceMotion) return;
   framed = 'hero';
   controls.autoRotate = true;
+  controls.autoRotateSpeed = 0;
+  spinClock = -delay;
 }
 
 // After a rebuild or scene change: drop the cached fits and ease to the new one. While
@@ -277,7 +361,9 @@ export function startSpin() {
 export function rigChanged() {
   rig = null;
   spin = null;
-  controls.maxPolarAngle = onWater ? Math.PI * 0.485 : Math.PI * 0.49;
+  // Level at most, so the profile preset is a true elevation; the change handler below keeps
+  // the camera itself above the floor or the water.
+  controls.maxPolarAngle = Math.PI / 2;
   setLimits();
   if (!framed || (VIEWS[framed].spin && controls.autoRotate)) return;
   if (flight) {
@@ -337,6 +423,15 @@ export function stepCamera() {
   const now = performance.now();
   const dt = Math.min(0.1, (now - (lastStep || now)) / 1000);
   lastStep = now;
+  if (controls.autoRotate) {
+    if (!flight) spinClock += dt;
+    const u = THREE.MathUtils.clamp(spinClock / SPIN_RAMP, 0, 1);
+    // OrbitControls turns 2 pi / 3600 x speed per update: scale by the frame time, so the turn
+    // rate is the same at any frame rate.
+    controls.autoRotateSpeed = flight ? 0 : SPIN_SPEED * u * u * (3 - 2 * u) * dt * 60;
+  } else {
+    spinClock = 0;
+  }
   if (flight) {
     // Swing round the target on a sphere, so a bow-to-stern move never cuts through the boat.
     const u = Math.min(1, (now - flight.start) / flight.duration);
@@ -409,11 +504,11 @@ export function specShot() {
 // ---------- QA ----------
 
 const r3 = (v) => Math.round(v * 1000) / 1000;
-function bounds(cam) {
+function bounds(cam, points = rigPoints().points) {
   cam.updateMatrixWorld();
   let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
   const p = new THREE.Vector3();
-  for (const q of rigPoints().points) {
+  for (const q of points) {
     p.copy(q).project(cam);
     x0 = Math.min(x0, (p.x + 1) / 2); x1 = Math.max(x1, (p.x + 1) / 2);
     y0 = Math.min(y0, (1 - p.y) / 2); y1 = Math.max(y1, (1 - p.y) / 2);
@@ -422,7 +517,9 @@ function bounds(cam) {
 }
 
 // Where the rig sits on the stage now (fractions, y down), against the safe area; and the
-// worst bounds over a full auto-rotate turn, sampled every degree from the spin table.
+// worst bounds over a full auto-rotate turn, sampled every degree from the spin table. boat is
+// the boat alone (hull, fit-out and engines: no trailer, cradle or ignored rods), and solidTop
+// and top the height the thin-geometry cut works from and the top of what is fitted.
 export function rigOnScreen() {
   if (!current) return null;
   const cam = camera.clone();
@@ -437,10 +534,13 @@ export function rigOnScreen() {
   }
   return {
     rig: bounds(camera),
+    boat: bounds(camera, rigPoints().boatPoints),
     spinWorst: worst,
     safe: { x0: r3((safe.l + 1) / 2), x1: r3((safe.r + 1) / 2), y0: r3((1 - safe.t) / 2), y1: r3((1 - safe.b) / 2) },
     d: r3(camera.position.distanceTo(controls.target)),
     zoom: [r3(controls.minDistance), r3(controls.maxDistance)],
     framed,
+    solidTop: r3(rigPoints().solidTop),
+    top: r3(rigPoints().box.max.y),
   };
 }

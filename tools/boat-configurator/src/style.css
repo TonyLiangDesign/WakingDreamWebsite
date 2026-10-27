@@ -108,7 +108,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .stage-views button:hover, .stage-scene button[aria-pressed="false"]:hover { background: rgba(247, 243, 237, 0.1); color: var(--text); }
 .stage-views button:focus-visible { outline-offset: -2px; }
 .stage-scene button:focus-visible { outline-offset: 1px; }
-.stage-hint { position: absolute; left: 20px; bottom: 26px; margin: 0; font-size: 0.64rem; letter-spacing: 0.06em; color: var(--text-mute); pointer-events: none; }
+.stage-hint { position: absolute; left: 20px; bottom: 26px; margin: 0; font-size: 0.64rem; letter-spacing: 0.06em; color: #a39d92; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45); pointer-events: none; }
 @container (max-width: 900px) { .stage-hint { display: none; } }
 @container (max-width: 600px) {
   .stage-top { left: 16px; right: 10px; top: 10px; gap: 12px; }
@@ -126,8 +126,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   .stage-views button { padding: 4px 8px; letter-spacing: 0.01em; }
 }
 
-#loading { position: absolute; inset: 0; display: grid; place-items: center; background: #161718; color: var(--text-soft); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; transition: opacity 0.6s; }
-#loading.done { opacity: 0; pointer-events: none; }
+#loading { position: absolute; inset: 0; display: grid; place-items: center; background: #161718; color: var(--text-soft); font-size: 0.72rem; letter-spacing: 0.18em; text-transform: uppercase; transition: opacity 0.9s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.9s; }
+#loading span { transition: opacity 0.4s ease; }
+#loading.done { opacity: 0; visibility: hidden; pointer-events: none; }
+#loading.done span { opacity: 0; }
 
 /* ---------- steps ---------- */
 
@@ -152,6 +154,13 @@ label input { position: absolute; opacity: 0; pointer-events: none; }
 .card-title { font-size: 0.86rem; font-weight: 500; }
 .card-meta { font-size: 0.68rem; line-height: 1.4; color: var(--text-mute); }
 .card-price { margin-top: 4px; font-family: var(--mono); font-size: 0.7rem; color: var(--text-soft); }
+/* Phones: three model cards side by side leave under 90 px for "Harbour 550" and its price, so
+   they wrap to four lines. Stack them as rows instead: name left, length and price right. */
+@media (max-width: 479px) {
+  #opt-model { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  #opt-model .card { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 10px 14px; }
+  #opt-model .card-meta { text-align: right; white-space: nowrap; }
+}
 
 .swatches { display: flex; flex-wrap: wrap; gap: 10px; }
 .swatch { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 1px solid transparent; transition: border-color 160ms ease; }
@@ -206,12 +215,14 @@ summary { cursor: pointer; font-size: 0.72rem; color: var(--text-soft); }
 .form label { font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-soft); cursor: default; }
 .form input { width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 0; background: var(--bg-raised); color: var(--text); font-size: 0.86rem; }
 .form input:focus { border-color: var(--line-strong); outline: none; }
+.form input:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .form .btn { margin-top: 8px; width: 100%; }
 
 /* ---------- builder settings (demo) ---------- */
 
 .builder { margin: 16px 20px 0; padding: 12px 14px; border: 1px dashed rgba(143, 195, 182, 0.45); border-radius: 6px; background: rgba(143, 195, 182, 0.04); }
 .builder summary { font-size: 0.72rem; color: var(--text-soft); }
+.builder-what { white-space: nowrap; }
 .builder-tag { margin-right: 8px; font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
 .builder-note { margin: 8px 0 10px; font-size: 0.66rem; line-height: 1.45; color: var(--text-mute); }
 .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
@@ -249,6 +260,16 @@ dialog#lead::backdrop { background: rgba(0, 0, 0, 0.62); backdrop-filter: blur(3
 .lead-card li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-top: 1px solid var(--line); font-size: 0.72rem; color: var(--text-soft); }
 .lead-card li span:last-child { font-family: var(--mono); font-size: 0.68rem; white-space: nowrap; }
 #lead .actions { grid-template-columns: 1fr 1fr; }
+/* Copy and Close stay in reach while a long lead scrolls. */
+dialog#lead { overflow-y: auto; }
+#lead .actions { position: sticky; bottom: -20px; margin: 0 -22px -20px; padding: 12px 22px 20px; background: var(--bg-raised); }
+@media (max-width: 480px) {
+  dialog#lead { padding: 18px 16px 16px; }
+  #lead .actions { bottom: -16px; margin: 0 -16px -16px; padding: 12px 16px 16px; }
+  .lead-card { padding: 12px 14px; }
+  .lead-card dl { grid-template-columns: minmax(0, 1fr); gap: 1px; }
+  .lead-card dd { margin-bottom: 8px; }
+}
 
 .pitch-points { margin: 0 0 20px; padding: 0; list-style: none; display: grid; gap: 10px; }
 .pitch-points li { padding-left: 14px; border-left: 1px solid rgba(143, 195, 182, 0.5); font-size: 0.78rem; line-height: 1.5; color: var(--text-mute); }
@@ -281,7 +302,10 @@ dialog#lead::backdrop { background: rgba(0, 0, 0, 0.62); backdrop-filter: blur(3
   body.sheet-open .sheet { position: static; overflow: visible; padding: 0; background: #fff; }
   .sheet-bar { display: none; }
   .sheet-page { max-width: none; margin: 0; padding: 0; background: #fff; }
-  @page { margin: 14mm; }
+  .sheet-page img { -webkit-print-color-adjust: exact; print-color-adjust: exact; break-inside: avoid; }
+  .sheet-page tr, .sheet-total-line { break-inside: avoid; }
+  .sheet-head { break-after: avoid; }
+  @page { size: A4; margin: 14mm; }
 }
 
 /* ---------- boat-show kiosk ---------- */
