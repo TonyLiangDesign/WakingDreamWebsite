@@ -15,7 +15,7 @@ export { TRAILER_LIFT, CRADLE_LIFT } from './stand.js';
 
 // buildBoat() only orchestrates: it runs the parts in order on one group, passing the lines and
 // the anchors earlier parts return, then merges the boat by material. Returns
-//   { boat, lines, leds, trailer, cradle, podHalf }
+//   { boat, lines, leds, engines, trailer, cradle, podHalf }  (engines: [x, z] mounts)
 
 export function buildBoat(build, m) {
   const r = resolve(build);
@@ -31,10 +31,10 @@ export function buildBoat(build, m) {
   bowFittings(boat, lines, m);
   if (build.options.includes('bowrail')) bowRail(boat, lines, m);
   if (build.options.includes('bait')) baitStation(boat, lines, m);
-  outboards(boat, m, { hp: r.engine.hp, twin, podTop: deck.podTop, plateY: lines.keel(0) + 0.03 - deck.podTop, aft: deck.aft });
+  const engines = outboards(boat, m, { hp: r.engine.hp, twin, podTop: deck.podTop, plateY: lines.keel(0) + 0.03 - deck.podTop, aft: deck.aft });
   const leds = build.options.includes('lights') ? underwaterLights(boat, m, deck) : [];
 
-  return { boat: mergeStatic(boat), lines, leds, trailer: trailer(lines, m), cradle: cradle(lines, m), podHalf: deck.podHalf };
+  return { boat: mergeStatic(boat), lines, leds, engines, trailer: trailer(lines, m), cradle: cradle(lines, m), podHalf: deck.podHalf };
 }
 
 export function disposeTree(object) {

@@ -4,17 +4,19 @@ import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { resolve } from './config.js';
 import { createMaterials, applyBuild } from './materials.js';
 import { buildBoat, disposeTree, TRAILER_LIFT, CRADLE_LIFT } from './boat/index.js';
-import { POD } from './boat/cockpit.js';
-import { createSky, createWater, createUnderwater, waterlineUniforms, wetMaterial, SUN_DIR, WL_STATIONS } from './water.js';
+import { createSky, createWater, createWhiteWater, createUnderwater, waterlineUniforms, wetMaterial, SUN_DIR, WL_STATIONS } from './water.js';
+import { createSpray } from './spray.js';
 
 // Renderer, environments, lights, studio floor and contact shadow, sky and water, the boat's
-// place in the scene (afloat trim and swell), the water reflection pass and the render loop.
+// place in the scene (running trim and motion), the water reflection pass and the render loop.
 // mountBoat(build) swaps the boat in; `current` is the live result of buildBoat() and `onWater`
 // the live scene flag. The camera lives in camera.js and is passed in where needed.
 //   Studio: a dark softbox environment (so bare alloy reads as metal), key / fill / rim lights,
 //           a soft directional floor shadow plus a contact shadow baked once per build.
 //   Water:  the golden-hour sky as environment, the sun as key, a planar reflection rendered at
-//           reduced resolution each frame, static trim solved from the hull lines, gentle swell.
+//           reduced resolution each frame. The boat is shown underway, held in place while the
+//           sea streams past: planing trim solved from the hull lines, a light chop in its
+//           motion, the wake in the water shader and the spray as points (spray.js).
 
 const lerp = THREE.MathUtils.lerp;
 const clamp = THREE.MathUtils.clamp;
@@ -129,7 +131,9 @@ scene.add(contact.mesh);
 const sky = createSky();
 const water = createWater({ detail: lowPower ? 0 : 1 });
 const underwater = createUnderwater();
-scene.add(sky, water, underwater);
+const spray = createSpray({ count: lowPower ? 2500 : 7000 });
+const whiteWater = createWhiteWater();
+scene.add(sky, water, underwater, spray.points, whiteWater.mesh);
 const wet = waterlineUniforms();
 
 // vessel (bobs on the water) > offset (centres the hull) > boat; stands stay put.
@@ -186,6 +190,69 @@ export function afloatTrim(lines, build) {
   return { angle, wl0, wl, bow };
 }
 
+// ---------- underway: planing trim from the hull lines ----------
+
+// Shown on the water the Harbour runs at about 20 knots (the sea streams aft at UNDERWAY.speed
+// m/s). Planing, she sits 4.2 degrees bow-up on the keel line with the transom lifted until the
+// water meets the bottom UNDERWAY.draft above the keel: the chines run dry at the transom and the
+// keel leaves the water a little forward of midships, at the spray root. A heavier outboard or
+// twins sit the stern up to 1.5 cm deeper. Returns the bow-up angle, the waterline height wl(t)
+// in boat coordinates and t at the spray root.
+export const UNDERWAY = { speed: 10, trim: THREE.MathUtils.degToRad(4.2), draft: 0.25 };
+export function underwayTrim(lines, build) {
+  const { L, section } = lines;
+  const engine = resolve(build).engine;
+  const load = engine.count === 2 ? 1 : clamp((engine.hp - 150) / 150, 0, 1) * 0.6;
+  const wl0 = section(0).yk + UNDERWAY.draft + 0.015 * load;
+  const fall = Math.tan(UNDERWAY.trim) * L;
+  const wl = (t) => wl0 - fall * t;
+  let bow = 0.2;
+  while (bow < 1 && section(bow).yk < wl(bow)) bow += 0.0025;
+  return { angle: UNDERWAY.trim, wl0, wl, bow };
+}
+
+// Where the spray leaves the hull: the chine edge over the forward part of the wetted length,
+// strongest just aft of the spray root; and the props, a little aft of each engine's mount.
+function sprayRig(lines, engines, bow) {
+  const t0 = Math.max(0.1, bow - 0.42);
+  const t1 = bow - 0.05;
+  const chine = Array.from({ length: 16 }, (_, i) => {
+    const u = i / 15;
+    const sec = lines.section(lerp(t0, t1, u));
+    return [sec.x, sec.yc - 0.04, sec.zc, Math.pow(Math.sin(Math.PI * (0.08 + 0.84 * u)), 1.5) * (0.35 + 0.65 * u)];
+  });
+  return { chine, props: engines.map(([x, z]) => [x - 0.45, z]) };
+}
+
+// The white-water ribbon's stations (starboard side, world space), from the spray root aft and
+// on past the transom. Inner edge: tucked just under the chine edge, at most 22 cm up and rising
+// over the first stretch aft of the spray root. Outer edge: out on the sea, where the bow wave
+// crest stands, widening aft. Astern of the transom the ribbon follows the crest out and drops
+// to the surface. Call with the vessel at its running trim (no motion).
+const ribbonPoint = new THREE.Vector3();
+function whiteWaterRows(lines, boat, bow) {
+  const { L } = lines;
+  const rows = [];
+  const world = (x, y, z) => ribbonPoint.set(x, y, z).applyMatrix4(boat.matrixWorld).clone();
+  const N = 22;
+  for (let i = 0; i <= N; i++) {
+    const t = bow - 0.04 - (bow - 0.04) * (i / N);
+    const sec = lines.section(t);
+    const along = (bow - t) * L;
+    const edge = world(sec.x, sec.yc, sec.zc * 0.93);
+    const rise = clamp(along / 1.2, 0, 1);
+    const inner = [edge.x, Math.min(edge.y - 0.02, 0.22) * rise, edge.z];
+    const outer = [edge.x - 0.05, 0, sec.zc + 0.28 + 0.07 * along];
+    rows.push([inner, outer]);
+  }
+  // Astern: two more stations peeling away with the crest.
+  const [lastIn, lastOut] = rows[rows.length - 1];
+  for (const d of [0.8, 1.8]) {
+    rows.push([[lastIn[0] - d, lastIn[1] * (1 - d / 2), lastIn[2] + 0.2 * d], [lastOut[0] - d, 0, lastOut[2] + 0.25 * d]]);
+  }
+  return rows;
+}
+
 // Half-width of the hull where the water meets it at station t.
 function waterlineHalfWidth(lines, t, y) {
   return lines.halfWidth(lines.section(clamp(t, 0, 1)), y);
@@ -197,24 +264,35 @@ function applyScene(build) {
   const { L } = current.lines;
   current.trailer.visible = onTrailer;
   current.cradle.visible = !onWater && !onTrailer;
+  const u = water.material.uniforms;
   if (onWater) {
-    const a = afloatTrim(current.lines, build);
+    const a = underwayTrim(current.lines, build);
     trim = a.angle;
     lift = (L / 2) * Math.sin(trim) - a.wl0 * Math.cos(trim);
-    // The water's hull mask runs from the aft end of the boarding pods to the forefoot.
-    const t0 = -POD / L;
-    const u = water.material.uniforms;
-    u.uHullX.value.set(t0 * L - L / 2, (a.bow - t0) * L);
+    // Underway the pods ride clear: the water's hull mask runs from the transom to the spray root,
+    // and the wake is drawn from both.
+    u.uHullX.value.set(-L / 2, a.bow * L);
     u.uWl.value = Array.from({ length: WL_STATIONS + 1 }, (_, i) => {
-      const t = lerp(t0, a.bow, i / WL_STATIONS);
+      const t = a.bow * (i / WL_STATIONS);
       return waterlineHalfWidth(current.lines, t, a.wl(t));
     });
+    u.uWash.value = current.engines.length > 1 ? 0.62 : 0.32;
+    u.uChine.value = current.lines.section(0.3).zc;
+    spray.setRig(sprayRig(current.lines, current.engines, a.bow));
   } else {
     trim = 0;
     lift = onTrailer ? TRAILER_LIFT : CRADLE_LIFT;
   }
   vessel.position.y = lift;
   vessel.rotation.set(0, 0, trim);
+  u.uRun.value = onWater ? 1 : 0;
+  spray.points.visible = onWater;
+  whiteWater.mesh.visible = onWater;
+  if (onWater) {
+    vessel.updateMatrixWorld(true);
+    spray.warm(current.boat, UNDERWAY.speed);
+    whiteWater.build(whiteWaterRows(current.lines, current.boat, underwayTrim(current.lines, build).bow));
+  }
 
   sky.visible = water.visible = underwater.visible = onWater;
   floor.visible = contact.mesh.visible = !onWater;
@@ -501,18 +579,33 @@ export function renderReflection(camera) {
   sky.position.copy(camera.position);
 }
 
-// Swell and the underwater-light glow, once a frame.
+// The running motion, the streaming sea, the spray and the underwater-light glow, once a frame.
+// Underway on a light chop: a quick pitch and heave with a firmer slam every few seconds, a slow
+// roll and a little yaw as the helm holds her course. Reduced motion holds a still frame of it.
 const glowPoint = new THREE.Vector3();
 const aftAxis = new THREE.Vector3();
+let lastT = 0;
 export function tick(t) {
+  const dt = t - lastT;
+  lastT = t;
   if (!onWater) return;
-  const swell = reduceMotion ? 0 : 1;
-  vessel.position.y = lift + (Math.sin(t * 0.8) * 0.014 + Math.sin(t * 1.37 + 1.1) * 0.005) * swell;
-  vessel.rotation.z = trim + Math.sin(t * 0.62 + 0.8) * 0.0035 * swell;
-  vessel.rotation.x = Math.sin(t * 0.5) * 0.009 * swell;
-  water.material.uniforms.uTime.value = reduceMotion ? 0 : t;
+  const run = reduceMotion ? 0 : 1;
+  const k = (t % 4.7) / 4.7;
+  const slam = k < 0.1 ? Math.sin((k / 0.1) * Math.PI) : 0;
+  vessel.position.y = lift + (Math.sin(t * 1.9) * 0.01 + Math.sin(t * 3.3 + 0.7) * 0.004 + slam * 0.012) * run;
+  vessel.rotation.set(
+    (Math.sin(t * 0.7) * 0.011 + Math.sin(t * 2.3 + 0.4) * 0.003) * run,
+    Math.sin(t * 0.43 + 1.2) * 0.004 * run,
+    trim + (Math.sin(t * 1.9 + 0.9) * 0.006 + Math.sin(t * 3.7) * 0.0025 - slam * 0.01) * run,
+  );
   const u = water.material.uniforms;
+  u.uTime.value = t * run;
+  // Wrapped well short of where float precision would coarsen the streaming ripples and foam.
+  u.uFlow.value = ((UNDERWAY.speed * t) % 20000) * run;
+  whiteWater.mesh.material.uniforms.uFlow.value = u.uFlow.value;
+  whiteWater.mesh.material.uniforms.uTime.value = u.uTime.value;
   current.boat.updateWorldMatrix(true, false);
+  if (run) spray.update(dt, current.boat, UNDERWAY.speed);
   for (let i = 0; i < 2; i++) {
     const p = current.leds[i];
     if (!p) { u.uGlow.value[i].w = 0; continue; }
@@ -560,7 +653,7 @@ const aoBox = new THREE.Box3();
 function collectOcclusionHidden() {
   aoHidden.length = 0;
   aoDrawn.length = 0;
-  aoHidden.push(sky, underwater, contact.mesh);
+  aoHidden.push(sky, underwater, contact.mesh, spray.points, whiteWater.mesh);
   for (const part of [current.boat, current.trailer, current.cradle]) {
     part.traverse((o) => {
       if (o.isPoints || o.isLine) aoHidden.push(o);
@@ -704,10 +797,14 @@ function createPost() {
 }
 
 // One shadow update, the reflection when afloat, then the frame itself.
+const bufferSize = new THREE.Vector2();
 export function renderFrame(camera) {
   if (qaPerf) qaPerf.camera = camera;
   renderer.shadowMap.needsUpdate = true;
-  if (onWater) renderReflection(camera);
+  if (onWater) {
+    spray.setScale(renderer.getDrawingBufferSize(bufferSize).y * camera.projectionMatrix.elements[5] / 2);
+    renderReflection(camera);
+  }
   sky.position.copy(camera.position);
   if (post) post.render(camera);
   else renderer.render(scene, camera);

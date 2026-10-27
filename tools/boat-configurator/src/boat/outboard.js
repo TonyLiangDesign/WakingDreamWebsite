@@ -534,10 +534,12 @@ function outboard(m, hp, plateY, hand) {
 
 // Single on the centreline, or twin at 0.66 m centres (26 in, the usual twin-rig spacing), each
 // bolted to the aft face of the engine pod. The port engine of a twin turns a left-hand prop.
+// Returns each engine's [x, z] mount on the pod.
 export function outboards(group, m, { hp, twin, podTop, plateY, aft }) {
-  for (const z of twin ? [-0.33, 0.33] : [0]) {
+  return (twin ? [-0.33, 0.33] : [0]).map((z) => {
     const engine = outboard(m, hp, plateY, twin && z < 0 ? -1 : 1);
     engine.position.set(aft, podTop, z);
     group.add(engine);
-  }
+    return [aft, z];
+  });
 }

@@ -5,7 +5,12 @@ import * as THREE from 'three';
 //   createSky()          the dome (also rendered into the PMREM environment)
 //   createWater()        the sea: planar reflection (tReflect / uMirror, filled by scene.js),
 //                        ripple normals, Fresnel, sun glitter, horizon haze, the dark contact
-//                        band at the hull and the soft glow of the underwater lights
+//                        band at the hull and the soft glow of the underwater lights; underway
+//                        (uRun = 1) the sea streams aft past the boat and carries its wake: the
+//                        bow wave peeling off the hull, the diverging crests, the stern mound,
+//                        white water along the chines and the prop wash fading astern
+//   createWhiteWater()   underway: the white water piled against each side, from under the chine
+//                        out onto the sea, so a profile view shows the hull pressing into it
 //   createUnderwater()   a deep-water floor, so the clear water next to the hull has a bottom
 //   wetMaterial(m, u)    patches a boat material: a wet, darker band at the waterline and a
 //                        teal fade for anything just under the surface (u from waterlineUniforms)
@@ -59,6 +64,31 @@ const skyChunk = /* glsl */ `
   float dither(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453) - 0.5; }
 `;
 
+// Value noise and four-octave fbm for foam, shared by the sea and the white water.
+const noiseChunk = /* glsl */ `
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+  float fbm(vec2 p) {
+    float s = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 4; i++) {
+      s += a * vnoise(p);
+      p = mat2(1.6, 1.2, -1.2, 1.6) * p;
+      a *= 0.5;
+    }
+    return s;
+  }
+`;
+
 export function createSky() {
   const material = new THREE.ShaderMaterial({
     // uAlpha is 0 in the reflection pass, so the mirror image carries an occlusion mask.
@@ -107,6 +137,13 @@ export function createWater({ detail = 1 } = {}) {
     tReflect: { value: null },
     uMirror: { value: new THREE.Matrix4() },
     uTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) },
+    // Underway: uRun 0 or 1, uFlow = how far the sea has streamed aft (metres, wrapped),
+    // uWash = half-spread of the prop wash at the transom (wider for twins).
+    uRun: { value: 0 },
+    uFlow: { value: 0 },
+    uWash: { value: 0.3 },
+    // Half-beam at the chines: underway the white water spills out from under them.
+    uChine: { value: 1 },
   };
   const material = new THREE.ShaderMaterial({
     uniforms,
@@ -133,6 +170,10 @@ export function createWater({ detail = 1 } = {}) {
       uniform float uWl[${WL_STATIONS + 1}];
       uniform sampler2D tReflect;
       uniform vec2 uTexel;
+      uniform float uRun;
+      uniform float uFlow;
+      uniform float uWash;
+      uniform float uChine;
       varying vec3 vWorld;
       varying vec4 vMirror;
 
@@ -171,13 +212,94 @@ export function createWater({ detail = 1 } = {}) {
         return length(vec2((t - tc) * uHullX.y, max(dz, 0.0))) + min(dz, 0.0);
       }
 
+      // ---------- underway ----------
+      // Boat frame: the sea streams towards -x. Underway the hull mask runs from the transom
+      // (uHullX.x) to where the keel leaves the water (the spray root), so both come from it.
+      ${noiseChunk}
+      // Water half-width of the hull at x (0 off the hull).
+      float hullHalf(float x) {
+        float t = (x - uHullX.x) / uHullX.y;
+        if (t < 0.0 || t > 1.0) return 0.0;
+        float f = t * ${WL_STATIONS}.0;
+        int i = int(min(floor(f), ${WL_STATIONS - 1}.0));
+        return mix(uWl[i], uWl[i + 1], f - float(i));
+      }
+      // Where the diverging crest runs (distance off the centreline), its width and height:
+      // it peels off the hull from the spray root, opens slowly along the topsides, then
+      // spreads astern at about 12 degrees, widening and flattening as it goes.
+      vec3 crest(vec2 p) {
+        float xT = uHullX.x;
+        float xS = uHullX.x + uHullX.y;
+        float s = max(xT - p.x, 0.0);
+        float along = clamp(xS - p.x, 0.0, xS - xT);
+        // Alongside, the crest stands outboard of whichever is wider, the wetted bottom or the chines.
+        float c0 = max(uWl[0] + 0.05, uChine + 0.1) + (xS - xT) * 0.1;
+        float c = p.x < xT ? c0 + s * 0.21 : max(hullHalf(p.x) + 0.05, uChine * smoothstep(xS, xS - 1.2, p.x) + 0.1) + along * 0.1;
+        float w = 0.16 + along * 0.03 + s * 0.045;
+        float a = 0.085 * smoothstep(xS + 0.2, xS - 0.9, p.x) / sqrt(1.0 + s / 5.0);
+        return vec3(c, w, a);
+      }
+      // Prop wash: aerated, churned water astern of the lower units, spreading and fading.
+      float washMask(vec2 p) {
+        float s = uHullX.x - p.x;
+        float w = uWash + 0.065 * max(s, 0.0);
+        return exp(-p.y * p.y / (w * w) * 1.3) * smoothstep(0.35, 1.3, s) * exp(-max(s, 0.0) / 42.0);
+      }
+      // Wake surface height (metres) at p; q is the streaming sea position for the chop.
+      float wakeHeight(vec2 p, vec2 q) {
+        vec3 k = crest(p);
+        float u = (abs(p.y) - k.x) / k.y;
+        float h = k.z * (exp(-u * u) - 0.45 * exp(-(u + 1.7) * (u + 1.7) / 1.4) + 0.3 * exp(-(u - 2.3) * (u - 2.3)));
+        // The stern mound, where the water closes in again behind the transom.
+        float s = uHullX.x - p.x;
+        float hT = max(uWl[0], 0.3);
+        h += 0.06 * exp(-pow((s - 2.6) / 2.2, 2.0)) * exp(-p.y * p.y / (hT * hT * 0.7)) * step(0.0, s);
+        // Churned surface in the wash.
+        h += washMask(p) * 0.03 * (fbm(q * vec2(1.4, 2.6)) - 0.5);
+        return h;
+      }
+
       void main() {
         float dist = length(vWorld.xz - cameraPosition.xz);
         float fade = 1.0 / (1.0 + dist * 0.07);
         float d = max(hullDist(vWorld.xz), 0.0);
         // The hull damps the ripples in its lee.
-        float lee = exp(-d * 1.4);
-        vec2 g = slope(vWorld.xz, uTime, fade) * (0.4 + 0.6 * fade) * (1.0 - 0.55 * lee);
+        float lee = exp(-d * 1.4) * (1.0 - 0.6 * uRun);
+        // Underway the whole sea (ripples, chop and foam) streams aft past the hull.
+        vec2 q = vWorld.xz + vec2(uFlow, 0.0);
+        // A fresher breeze over the deck when running: livelier chop that breaks the mirror up.
+        vec2 g = slope(q, uTime, fade) * (0.4 + 0.6 * fade) * (1.0 - 0.55 * lee) * (1.0 + 0.7 * uRun);
+        float foam = 0.0;
+        float aer = 0.0;
+        // The wake is worked out only round the boat and astern of it.
+        if (uRun > 0.5 && vWorld.x > uHullX.x - 170.0 && abs(vWorld.z) < 45.0 && vWorld.x < uHullX.x + uHullX.y + 3.0) {
+          vec2 p = vWorld.xz;
+          float e = 0.035;
+          float h0 = wakeHeight(p, q);
+          g += vec2(wakeHeight(p + vec2(e, 0.0), q + vec2(e, 0.0)) - h0, wakeHeight(p + vec2(0.0, e), q + vec2(0.0, e)) - h0) / e;
+          float xT = uHullX.x;
+          float xS = uHullX.x + uHullX.y;
+          float s = max(xT - p.x, 0.0);
+          vec3 k = crest(p);
+          float u = (abs(p.y) - k.x) / k.y;
+          // White water hugging the chines from the spray root aft, breaking crests close to the
+          // boat, and the wash; noise streaked along the flow breaks it into lace as it ages.
+          // (the band runs from the hull out to the crest, so it shows past the chine flats)
+          float side = smoothstep(k.x + 0.6 * k.y, k.x - 0.8 * k.y, abs(p.y)) * smoothstep(xS + 0.1, xS - 0.7, p.x) * smoothstep(xT - 2.5, xT, p.x);
+          float crestF = exp(-u * u * 2.2) * smoothstep(xS + 0.1, xS - 0.9, p.x) * exp(-s / 15.0);
+          float wash = washMask(p);
+          float f = max(max(side * 0.95, crestF * 0.7), wash);
+          // Large patches streaked along the flow, then fine bubbly grain (faded with distance,
+          // where it would only shimmer), thresholded against the mask.
+          float n = fbm(q * vec2(0.7, 2.0) + vec2(0.0, uTime * 0.15));
+          float grain = vnoise(q * vec2(5.0, 9.0) - vec2(uTime * 0.6, 0.0)) * 0.6 + vnoise(q * vec2(13.0, 21.0) + vec2(0.0, uTime)) * 0.4;
+          float v = n * 0.62 + mix(0.24, grain * 0.5, fade);
+          float thr = 0.98 - 0.72 * f;
+          // Dense in the core, thinning to a bubbly fringe; the grain also pocks the core.
+          foam = smoothstep(thr, thr + 0.2, v) * (0.5 + 0.5 * f) * mix(1.0, 0.7 + 0.45 * grain, fade) * smoothstep(0.02, 0.15, f);
+          foam = clamp(foam, 0.0, 1.0);
+          aer = clamp(max(wash * 1.3, max(crestF * 0.5, side)), 0.0, 1.0);
+        }
         vec3 n = normalize(vec3(-g.x, 1.0, -g.y));
         vec3 v = normalize(cameraPosition - vWorld);
         float nv = clamp(dot(n, v), 0.0, 1.0);
@@ -185,14 +307,16 @@ export function createWater({ detail = 1 } = {}) {
 
         // Water body: deep blue-green, lifted a touch by sky light and the low sun's scatter.
         vec3 body = uDeep * (0.8 + 2.2 * max(dot(n, uSunDir) - 0.12, 0.0)) + uTop * 0.02;
+        // Aerated water under and around the foam glows a lighter green-turquoise.
+        body = mix(body, vec3(0.15, 0.32, 0.34) * (0.8 + 1.4 * max(dot(n, uSunDir), 0.0)), aer * 0.45);
 
         // Planar reflection of the boat and sky, broken up by the ripples and stretched
         // vertically the way small waves smear a reflection.
-        vec2 ruv = vMirror.xy / vMirror.w + g * 0.055;
+        vec2 ruv = vMirror.xy / vMirror.w + g * (0.055 + 0.05 * uRun);
         // Alpha is the boat's mask in the mirror image (the sky writes none).
         vec4 mirror = texture2D(tReflect, ruv) * 0.5;
         #if DETAIL == 1
-          vec2 sv = vec2(0.0, uTexel.y * (1.5 + 3.0 * (1.0 - lee)));
+          vec2 sv = vec2(0.0, uTexel.y * (1.5 + 3.0 * (1.0 - lee)) * (1.0 + uRun));
           mirror += texture2D(tReflect, ruv + sv) * 0.25;
           mirror += texture2D(tReflect, ruv - sv) * 0.25;
         #else
@@ -215,26 +339,32 @@ export function createWater({ detail = 1 } = {}) {
         }
         body += glow * uGlowOn * 0.35;
 
-        vec3 col = mix(body, refl, fres);
+        // Aerated water is a poor mirror.
+        vec3 col = mix(body, refl, fres * (1.0 - 0.6 * aer));
 
         // Sun glitter: a sharp sparkle up close widening into a glitter path with distance,
         // where the ripples are too small to resolve.
         vec3 hv = normalize(uSunDir + v);
         float e = mix(60.0, 1400.0, fade * fade);
         float spec = pow(max(dot(n, hv), 0.0), e) * (e + 8.0) / 25.0;
-        col += uSunColor * spec * fres * 0.9 * (1.0 - 0.8 * lee) * (1.0 - mirror.a);
+        col += uSunColor * spec * fres * 0.9 * (1.0 - 0.8 * lee) * (1.0 - mirror.a) * (1.0 - foam);
 
-        // Dark contact band where the water meets the hull, and a faint broken wash line.
-        col = mix(col, uDeep * 0.3, 0.55 * exp(-d / 0.07));
+        // At rest: a dark contact band where the water meets the hull, and a faint broken wash
+        // line. Underway the white water along the chines takes their place.
+        col = mix(col, uDeep * 0.3, 0.55 * exp(-d / 0.07) * (1.0 - uRun));
         float broken = 0.5 + 0.5 * sin(vWorld.x * 11.0 + uTime * 1.1 + 3.0 * sin(vWorld.z * 7.0 + uTime * 0.7));
-        col += vec3(0.5, 0.52, 0.5) * exp(-pow(d / 0.025, 2.0)) * broken * 0.12;
+        col += vec3(0.5, 0.52, 0.5) * exp(-pow(d / 0.025, 2.0)) * broken * 0.12 * (1.0 - uRun);
+
+        // Foam: matte white, lit by the low sun and the sky, a little shaded in its own troughs.
+        vec3 foamCol = vec3(0.86, 0.9, 0.92) * (0.8 + 0.6 * max(dot(n, uSunDir), 0.0)) * mix(vec3(1.0), uSunColor, 0.18);
+        col = mix(col, foamCol, foam);
 
         // Horizon haze.
         col = mix(col, skyColour(normalize(vec3(-v.x, 0.01, -v.z))), smoothstep(80.0, 1200.0, dist));
 
         // Clear water within a hand's breadth of the hull: the submerged plate shows through,
         // tinted by the wet-material patch; beyond, the sea is opaque.
-        float clear = 0.45 * exp(-d / 0.12) * (1.0 - fres) * step(0.001, d);
+        float clear = 0.45 * exp(-d / 0.12) * (1.0 - fres) * step(0.001, d) * (1.0 - uRun);
         gl_FragColor = vec4(col, 1.0 - clear);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
@@ -246,6 +376,85 @@ export function createWater({ detail = 1 } = {}) {
   // First among the transparent objects, so glass and decals always draw over it.
   mesh.renderOrder = -1;
   return mesh;
+}
+
+// ---------- white water against the hull, underway ----------
+
+// Two ribbons in world space, one a side, from the spray root aft past the transom. Each runs
+// from just under the chine edge (inner, uv.y = 0) down and out to the sea (outer, uv.y = 1);
+// uv.x runs from the spray root (0) to the ribbon's end astern (1). Foam streams aft through
+// it at the cruising speed. build(rows) takes, per station, [inner xyz, outer xyz] pairs for
+// the starboard side (the port ribbon mirrors it).
+export function createWhiteWater() {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uFlow: { value: 0 },
+      uTime: { value: 0 },
+      uSunDir: { value: SUN_DIR.clone() },
+      uSunColor: { value: new THREE.Color('#ffc58a') },
+    },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      varying vec3 vWorld;
+      void main() {
+        vUv = uv;
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vWorld = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: /* glsl */ `
+      ${noiseChunk}
+      uniform float uFlow;
+      uniform float uTime;
+      uniform vec3 uSunDir;
+      uniform vec3 uSunColor;
+      varying vec2 vUv;
+      varying vec3 vWorld;
+      void main() {
+        vec2 q = vWorld.xz + vec2(uFlow, 0.0);
+        float n = fbm(q * vec2(1.1, 3.5) + vec2(0.0, uTime * 0.3));
+        float grain = vnoise(q * vec2(6.0, 11.0) - vec2(uTime * 0.8, 0.0));
+        // Dense against the hull, breaking into lace towards the sea and at both ends.
+        // The ragged edges come from the noise, not the ribbon's straight outline.
+        float body = smoothstep(1.0, 0.1, vUv.y + (n - 0.45) * 0.5) * smoothstep(0.0, 0.25, vUv.x) * smoothstep(1.0, 0.65, vUv.x);
+        float a = smoothstep(0.86 - 0.5 * body, 1.0 - 0.5 * body, n * 0.75 + grain * 0.35);
+        vec3 col = vec3(0.86, 0.9, 0.92) * (0.85 + 0.5 * max(uSunDir.y + 0.3, 0.0)) * mix(vec3(1.0), uSunColor, 0.18);
+        gl_FragColor = vec4(col, a * body * 0.85);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+  mesh.frustumCulled = false;
+  mesh.visible = false;
+  function build(rows) {
+    const n = rows.length;
+    const position = new Float32Array(n * 4 * 3);
+    const uv = new Float32Array(n * 4 * 2);
+    const index = [];
+    // Vertices per station: starboard inner, starboard outer, port inner, port outer.
+    rows.forEach(([inner, outer], i) => {
+      const u = i / (n - 1);
+      position.set([inner[0], inner[1], inner[2], outer[0], outer[1], outer[2], inner[0], inner[1], -inner[2], outer[0], outer[1], -outer[2]], i * 12);
+      uv.set([u, 0, u, 1, u, 0, u, 1], i * 8);
+      if (i < n - 1) {
+        for (const side of [0, 2]) {
+          const a = i * 4 + side;
+          const b = a + 4;
+          index.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+      }
+    });
+    mesh.geometry.dispose();
+    mesh.geometry = new THREE.BufferGeometry();
+    mesh.geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    mesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    mesh.geometry.setIndex(index);
+  }
+  return { mesh, build };
 }
 
 // The floor of the clear-water band: a deep teal plane a metre down.
