@@ -17,7 +17,7 @@ import { loadSkipper, placeSkipper } from './crew.js';
 //   Water:  the golden-hour sky as environment, the sun as key, a planar reflection rendered at
 //           reduced resolution each frame. The boat is shown underway, held in place while the
 //           sea streams past: planing trim solved from the hull lines, a light chop in its
-//           motion, the wake in the water shader and the spray as points (spray.js).
+//           motion, the wake in the water shader, the spray and white water (spray.js).
 
 const lerp = THREE.MathUtils.lerp;
 const clamp = THREE.MathUtils.clamp;
@@ -133,8 +133,8 @@ const sky = createSky();
 const water = createWater({ detail: lowPower ? 0 : 1 });
 const underwater = createUnderwater();
 const spray = createSpray({ count: lowPower ? 2500 : 7000 });
-const whiteWater = createWhiteWater();
-scene.add(sky, water, underwater, spray.points, whiteWater.mesh);
+const whiteWater = createWhiteWater({ detail: lowPower ? 0 : 1 });
+scene.add(sky, water, underwater, spray.object, whiteWater.mesh);
 const wet = waterlineUniforms();
 
 // vessel (bobs on the water) > offset (centres the hull) > boat; stands stay put.
@@ -215,14 +215,15 @@ export function underwayTrim(lines, build) {
 }
 
 // Where the spray leaves the hull: the chine edge over the forward part of the wetted length,
-// strongest just aft of the spray root; and the props, a little aft of each engine's mount.
+// strongest a little aft of the spray root and dying away aft; and the props, a little aft of
+// each engine's mount.
 function sprayRig(lines, engines, bow) {
-  const t0 = Math.max(0.1, bow - 0.42);
-  const t1 = bow - 0.05;
+  const t0 = Math.max(0.1, bow - 0.34);
+  const t1 = bow - 0.02;
   const chine = Array.from({ length: 16 }, (_, i) => {
     const u = i / 15;
     const sec = lines.section(lerp(t0, t1, u));
-    return [sec.x, sec.yc - 0.04, sec.zc, Math.pow(Math.sin(Math.PI * (0.08 + 0.84 * u)), 1.5) * (0.35 + 0.65 * u)];
+    return [sec.x, sec.yc - 0.04, sec.zc, Math.pow(Math.sin(Math.PI * Math.pow(u, 1.6)), 1.5) * (0.3 + 0.7 * u)];
   });
   return { chine, props: engines.map(([x, z]) => [x - 0.45, z]) };
 }
@@ -289,7 +290,7 @@ function applyScene(build) {
   vessel.position.y = lift;
   vessel.rotation.set(0, 0, trim);
   u.uRun.value = onWater ? 1 : 0;
-  spray.points.visible = onWater;
+  spray.object.visible = onWater;
   whiteWater.mesh.visible = onWater;
   if (onWater) {
     vessel.updateMatrixWorld(true);
@@ -620,7 +621,7 @@ export function tick(t) {
   whiteWater.mesh.material.uniforms.uFlow.value = u.uFlow.value;
   whiteWater.mesh.material.uniforms.uTime.value = u.uTime.value;
   current.boat.updateWorldMatrix(true, false);
-  if (run) spray.update(dt, current.boat, UNDERWAY.speed);
+  if (run) spray.update(dt, t, current.boat, UNDERWAY.speed);
   for (let i = 0; i < 2; i++) {
     const p = current.leds[i];
     if (!p) { u.uGlow.value[i].w = 0; continue; }
@@ -668,7 +669,7 @@ const aoBox = new THREE.Box3();
 function collectOcclusionHidden() {
   aoHidden.length = 0;
   aoDrawn.length = 0;
-  aoHidden.push(sky, underwater, contact.mesh, spray.points, whiteWater.mesh);
+  aoHidden.push(sky, underwater, contact.mesh, spray.object, whiteWater.mesh);
   for (const part of [current.boat, current.trailer, current.cradle]) {
     part.traverse((o) => {
       if (o.isPoints || o.isLine) aoHidden.push(o);
