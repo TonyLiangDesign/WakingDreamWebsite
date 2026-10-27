@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { resolve } from './config.js';
 import { createMaterials, applyBuild } from './materials.js';
 import { buildBoat, disposeTree, TRAILER_LIFT, CRADLE_LIFT } from './boat/index.js';
@@ -19,12 +21,21 @@ const clamp = THREE.MathUtils.clamp;
 export const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 export const stage = document.querySelector('.stage');
 export const canvas = document.getElementById('view');
-// Phones and small tablets: fewer ripple octaves, no reflection MSAA, a smaller shadow map.
-const lowPower = matchMedia('(max-width: 700px), (pointer: coarse)').matches;
+// Phones, small tablets and small very-high-density screens: fewer ripple octaves, no reflection
+// MSAA, a smaller shadow map, and the plain forward render (no ambient occlusion pipeline).
+const lowPower = matchMedia('(max-width: 700px), (pointer: coarse)').matches
+  || (devicePixelRatio > 2 && Math.min(screen.width, screen.height) < 900);
+// QA: ?qaAO=0 keeps the desktop pipeline but switches the occlusion off (for A/B and timings);
+// ?qaAO=view shows the occlusion buffer itself.
+const qaAO = new URLSearchParams(location.search).get('qaAO');
+// QA: ?qaPerf exposes window.qaPerf.frame() (one synchronous frame of the live scene) for timing.
+const qaPerf = new URLSearchParams(location.search).has('qaPerf') ? (window.qaPerf = { camera: null, frame: () => renderFrame(qaPerf.camera) }) : null;
 
 // ---------- renderer and scene ----------
 
-export const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+// Desktop renders into a multisampled target and finishes in post (see createPost), so the
+// canvas itself needs no MSAA; the low-power path draws straight to the canvas.
+export const renderer = new THREE.WebGLRenderer({ canvas, antialias: lowPower, alpha: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true;
@@ -89,6 +100,9 @@ function studioEnvironment() {
   panel(10, 4, '#fffdf8', 2.5, [7, 4, 14]);        // front softbox on the camera side
   panel(2, 12, '#ffffff', 14, [15, 5, 9]);         // key-side strip
   panel(9, 1.6, '#e8f0ff', 14, [-5, 6, -16]);      // rim strip behind
+  // A long, low, dim strip behind the set: the turn of the bilge and the chines on dark hulls
+  // catch it as a soft edge line, separating navy and charcoal from the dark backdrop.
+  panel(30, 1.2, '#e6eefc', 2.2, [-3, 0.9, -17]);
   return env;
 }
 
@@ -104,10 +118,10 @@ scene.add(rim, rim.target);
 const fill = new THREE.HemisphereLight('#dfe8f0', '#3a3530', 0.6);
 scene.add(fill);
 
-// Studio floor: the key's shadow, softened, over a baked contact shadow.
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.ShadowMaterial({ opacity: 0.22 }));
+// Studio floor: draws nothing itself (its shadows are baked into the contact layer) but writes
+// depth and normals into the occlusion pass, so the floor darkens where tyres and pads meet it.
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
 floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
 scene.add(floor);
 const contact = createContactShadow();
 scene.add(contact.mesh);
@@ -207,8 +221,11 @@ function applyScene(build) {
   wet.uWetOn.value = onWater ? 1 : 0;
   scene.environment = onWater ? waterEnv : studioEnv;
   scene.environmentIntensity = onWater ? 0.75 : 0.8;
-  renderer.toneMappingExposure = onWater ? 0.95 : 1.0;
-  const reach = L / 2 + (onTrailer ? 2.6 : 1.6);
+  // Studio: Khronos PBR Neutral keeps paint hues true (ACES pushes red to crimson and navy to
+  // violet) and rolls white decks off softly instead of clipping them. Water: ACES, whose
+  // highlight desaturation keeps whites neutral under the warm low sun (round-1 tuning).
+  renderer.toneMapping = onWater ? THREE.ACESFilmicToneMapping : THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = onWater ? 0.95 : 1.25;
   if (onWater) {
     key.color.set('#ffe8d0');
     key.intensity = 2.8;
@@ -229,61 +246,120 @@ function applyScene(build) {
     fill.groundColor.set('#2a2826');
     fill.intensity = 0.45;
   }
-  // Shadow frustum fitted round the rig, so texels stay small without clipping the shadow.
-  Object.assign(key.shadow.camera, { left: -reach, right: reach, top: reach, bottom: -reach, near: 1, far: 45 });
-  key.shadow.camera.updateProjectionMatrix();
   key.target.position.set(0, 0, 0);
+  fitKeyShadow();
   water.material.uniforms.uGlowOn.value = onWater && current.leds.length ? 1 : 0;
   if (!onWater) contact.bake();
+  collectOcclusionHidden();
 }
 
-// ---------- studio contact shadow, baked once per build ----------
+// The key's shadow camera, fitted in light space to the rig's bounds (rods and all) with a
+// margin for the swell and the filter, so its texels stay as small as the rig allows and no
+// caster is ever cut off at the frustum edge. The floor's shadows are baked separately, so
+// only the rig itself has to fit.
+const shadowBox = new THREE.Box3();
+const corner = new THREE.Vector3();
+function fitKeyShadow() {
+  vessel.updateMatrixWorld(true);
+  stand.updateMatrixWorld(true);
+  shadowBox.makeEmpty();
+  for (const part of [current.boat, current.trailer, current.cradle]) if (part.visible) shadowBox.expandByObject(part);
+  const cam = key.shadow.camera;
+  cam.position.copy(key.position);
+  cam.lookAt(key.target.position);
+  cam.updateMatrixWorld();
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (let i = 0; i < 8; i++) {
+    corner.set(i & 1 ? shadowBox.max.x : shadowBox.min.x, i & 2 ? shadowBox.max.y : shadowBox.min.y, i & 4 ? shadowBox.max.z : shadowBox.min.z);
+    corner.applyMatrix4(cam.matrixWorldInverse);
+    x0 = Math.min(x0, corner.x); x1 = Math.max(x1, corner.x);
+    y0 = Math.min(y0, corner.y); y1 = Math.max(y1, corner.y);
+    z0 = Math.min(z0, corner.z); z1 = Math.max(z1, corner.z);
+  }
+  const m = 0.15;
+  Object.assign(cam, { left: x0 - m, right: x1 + m, bottom: y0 - m, top: y1 + m, near: Math.max(0.1, -z1 - 1), far: -z0 + 1 });
+  cam.updateProjectionMatrix();
+}
 
-// The rig is seen from the floor by an orthographic camera looking up; each surface writes how
-// close it is to the floor (red: within a hand's breadth, green: within the hull's height).
-// Both channels are blurred, red a little and green a lot, and the floor shows the result: tight
-// dark contacts under tyres and cradle pads inside a broad soft shadow under the hull.
+// ---------- studio floor shadows, baked once per build ----------
+
+// The rig never moves in the studio, so everything the floor shows is baked once per build into
+// one texture seen from below by an orthographic camera:
+//   r  contact: surfaces within a hand's breadth of the floor (tyres, cradle pads)
+//   g  ambient: surfaces within the hull's height (the broad soft pool under the rig)
+//   b  key, low casters (under ~2 m: hull, trailer, cradle), projected along the key
+//   a  key, high casters (cabin top, hardtop, rods), projected along the key, blurred wider
+// A big softbox throws a soft cast shadow whose penumbra grows with the caster's height, so the
+// hull's shadow stays defined while rods and rails high above leave only a faint smudge, never
+// the stair-stepped lines a real-time shadow map draws for thin geometry. Costs nothing a frame.
 function createContactShadow() {
-  const RES = 512;
+  const RES = 1024;
   const HIGH = 1.8;
-  const opts = { type: THREE.HalfFloatType, depthBuffer: true };
+  const SPLIT = 2.0;
+  const BLUR = new THREE.Vector4(0.055, 0.42, 0.12, 0.45);
+  const step = new THREE.Vector4();
+  const opts = { type: THREE.HalfFloatType, depthBuffer: false };
   const targetA = new THREE.WebGLRenderTarget(RES, RES, opts);
-  const targetB = new THREE.WebGLRenderTarget(RES, RES, { type: THREE.HalfFloatType, depthBuffer: false });
+  const targetB = new THREE.WebGLRenderTarget(RES, RES, opts);
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, HIGH);
   cam.rotation.x = Math.PI / 2;
-  const depth = new THREE.ShaderMaterial({
-    side: THREE.DoubleSide,
-    vertexShader: `varying float vY;
-      void main() {
-        vec4 p = vec4(position, 1.0);
+  const maxBlend = { blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation, blendEquationAlpha: THREE.MaxEquation, depthTest: false, depthWrite: false, side: THREE.DoubleSide };
+  const instanced = `vec4 p = vec4(position, 1.0);
         #ifdef USE_INSTANCING
           p = instanceMatrix * p;
         #endif
-        vec4 w = modelMatrix * p;
+        vec4 w = modelMatrix * p;`;
+  const contactMat = new THREE.ShaderMaterial({
+    ...maxBlend,
+    vertexShader: `varying float vY;
+      void main() {
+        ${instanced}
         vY = w.y;
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: `varying float vY;
       void main() {
         float h = max(vY, 0.0);
-        gl_FragColor = vec4(pow(clamp(1.0 - h / 0.2, 0.0, 1.0), 2.0), pow(clamp(1.0 - h / ${HIGH.toFixed(2)}, 0.0, 1.0), 1.5), 0.0, 1.0);
+        gl_FragColor = vec4(pow(clamp(1.0 - h / 0.2, 0.0, 1.0), 2.0), pow(clamp(1.0 - h / ${HIGH.toFixed(2)}, 0.0, 1.0), 1.5), 0.0, 0.0);
+      }`,
+  });
+  // Every vertex slid down the key's direction onto the floor: the cast shadow's footprint.
+  const keyMat = new THREE.ShaderMaterial({
+    ...maxBlend,
+    uniforms: { uLight: { value: new THREE.Vector3() } },
+    vertexShader: `uniform vec3 uLight; varying float vY;
+      void main() {
+        ${instanced}
+        vY = w.y;
+        vec3 q = w.xyz - uLight * (max(w.y, 0.0) / uLight.y);
+        q.y = ${(HIGH / 2).toFixed(2)};
+        gl_Position = projectionMatrix * viewMatrix * vec4(q, 1.0);
+      }`,
+    fragmentShader: `varying float vY;
+      void main() {
+        if (vY < 0.0) discard;
+        float low = 1.0 - smoothstep(${(SPLIT - 0.15).toFixed(2)}, ${(SPLIT + 0.15).toFixed(2)}, vY);
+        gl_FragColor = vec4(0.0, 0.0, low, 1.0 - low);
       }`,
   });
   const blur = new THREE.ShaderMaterial({
-    uniforms: { tMap: { value: null }, uStep: { value: new THREE.Vector4() } },
+    uniforms: { tMap: { value: null }, uStep: { value: new THREE.Vector4() }, uAxis: { value: new THREE.Vector2() } },
     depthTest: false,
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-    fragmentShader: `uniform sampler2D tMap; uniform vec4 uStep; varying vec2 vUv;
+    fragmentShader: `uniform sampler2D tMap; uniform vec4 uStep; uniform vec2 uAxis; varying vec2 vUv;
       void main() {
-        vec2 sum = vec2(0.0);
+        vec4 sum = vec4(0.0);
         float total = 0.0;
         for (int i = -6; i <= 6; i++) {
           float w = exp(-float(i * i) / 12.5);
-          sum.x += texture2D(tMap, vUv + uStep.xy * float(i)).r * w;
-          sum.y += texture2D(tMap, vUv + uStep.zw * float(i)).g * w;
+          vec2 o = uAxis * float(i);
+          sum.r += texture2D(tMap, vUv + o * uStep.r).r * w;
+          sum.g += texture2D(tMap, vUv + o * uStep.g).g * w;
+          sum.b += texture2D(tMap, vUv + o * uStep.b).b * w;
+          sum.a += texture2D(tMap, vUv + o * uStep.a).a * w;
           total += w;
         }
-        gl_FragColor = vec4(sum / total, 0.0, 1.0);
+        gl_FragColor = sum / total;
       }`,
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blur);
@@ -306,8 +382,9 @@ function createContactShadow() {
     fragmentShader: `uniform sampler2D tShadow; varying vec2 vUv;
       void main() {
         vec2 edge = smoothstep(0.0, 0.08, vUv) * smoothstep(1.0, 0.92, vUv);
-        vec2 s = texture2D(tShadow, clamp(vUv, 0.0, 1.0)).rg;
-        float a = (1.0 - (1.0 - s.r * 0.6) * (1.0 - s.g * 0.62)) * edge.x * edge.y;
+        vec4 s = texture2D(tShadow, clamp(vUv, 0.0, 1.0));
+        float key = max(s.b * 0.42, s.a * 0.3);
+        float a = (1.0 - (1.0 - s.r * 0.6) * (1.0 - s.g * 0.55) * (1.0 - key)) * edge.x * edge.y;
         gl_FragColor = vec4(0.0, 0.0, 0.0, a);
       }`,
   });
@@ -318,11 +395,12 @@ function createContactShadow() {
 
   const box = new THREE.Box3();
   const size = new THREE.Vector3();
-  const centre = new THREE.Vector3();
+  const light = new THREE.Vector3();
   const clear = new THREE.Color();
-  function pass(from, to, sx, sy) {
+  function pass(from, to, step, ax, ay) {
     blur.uniforms.tMap.value = from.texture;
-    blur.uniforms.uStep.value.set(sx[0], sy[0], sx[1], sy[1]);
+    blur.uniforms.uStep.value.copy(step);
+    blur.uniforms.uAxis.value.set(ax, ay);
     renderer.setRenderTarget(to);
     renderer.render(quadScene, quadCam);
   }
@@ -330,14 +408,20 @@ function createContactShadow() {
     scene.updateMatrixWorld(true);
     box.makeEmpty();
     for (const part of [current.boat, current.trailer, current.cradle]) if (part.visible) box.expandByObject(part);
-    box.getSize(size);
-    box.getCenter(centre);
-    const half = Math.max(size.x, size.z) / 2 + 1.4;
+    // The cast shadow reaches out along the key from the top of the rig.
+    light.copy(key.position).sub(key.target.position).normalize();
+    const reach = box.max.y / light.y;
+    const x0 = Math.min(box.min.x, box.min.x - light.x * reach);
+    const x1 = Math.max(box.max.x, box.max.x - light.x * reach);
+    const z0 = Math.min(box.min.z, box.min.z - light.z * reach);
+    const z1 = Math.max(box.max.z, box.max.z - light.z * reach);
+    const half = Math.max(x1 - x0, z1 - z0) / 2 + 1.2;
     Object.assign(cam, { left: -half, right: half, top: half, bottom: -half });
-    cam.position.set(centre.x, 0, centre.z);
+    cam.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
     material.uniforms.uVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    keyMat.uniforms.uLight.value.copy(light);
 
     const hidden = [floor, mesh, sky, water, underwater].filter((o) => o.visible);
     hidden.forEach((o) => { o.visible = false; });
@@ -345,18 +429,22 @@ function createContactShadow() {
     renderer.getClearColor(clear);
     renderer.clippingPlanes = [];
     renderer.setClearColor(0x000000, 0);
-    scene.overrideMaterial = depth;
     renderer.setRenderTarget(targetA);
     renderer.clear();
+    renderer.autoClear = false;
+    scene.overrideMaterial = contactMat;
+    renderer.render(scene, cam);
+    scene.overrideMaterial = keyMat;
     renderer.render(scene, cam);
     scene.overrideMaterial = null;
-    // Blur radii in texels: about 4 cm for the contacts, about 30 cm for the broad shadow.
-    const texel = (half * 2) / RES;
-    const r = 0.04 / texel / 2.5 / RES;
-    const g = 0.3 / texel / 2.5 / RES;
-    for (let i = 0; i < 2; i++) {
-      pass(targetA, targetB, [r, g], [0, 0]);
-      pass(targetB, targetA, [0, 0], [r, g]);
+    renderer.autoClear = true;
+    // Total blur (Gaussian sigma, metres) per channel, reached in three separable passes whose
+    // sigmas grow 1 : 2 : 3.7. Each pass's tap spacing stays under the blur already applied, so
+    // hard edges never print as a staircase of shifted copies, however wide the blur.
+    for (const k of [1, 2, 3.667]) {
+      step.copy(BLUR).multiplyScalar(k / 4.294 / 2.5 / (half * 2));
+      pass(targetA, targetB, step, 1, 0);
+      pass(targetB, targetA, step, 0, 1);
     }
     renderer.setRenderTarget(saved.target);
     renderer.setClearColor(clear, saved.alpha);
@@ -436,21 +524,199 @@ export function tick(t) {
   u.uGlowAft.value.set(aftAxis.x, aftAxis.z).normalize();
 }
 
+// ---------- desktop pipeline: MSAA scene, ground-truth AO, one finishing pass ----------
+
+// Desktop renders the scene as linear HDR into a 4x multisampled target (clean edges on rods,
+// rails and rod tips), then GTAO works out contact occlusion from its own depth and normal pass
+// of the opaque rig, and one full-screen pass multiplies it in, tone maps, converts to sRGB,
+// dithers and writes a premultiplied image to the transparent canvas over the CSS backdrop.
+// Occlusion on the floor (which draws no colour of its own) darkens the backdrop through alpha.
+// Phones and low-power devices draw straight to the canvas with no occlusion (see lowPower).
+//   Tuning is for metre-scale geometry: a 0.3 m world radius with samples bunched towards the
+//   centre gives tight shading in cockpit corners, under seats and capping and round fittings.
+//   Stock GTAO only rejects samples by view depth, so a tube or rail standing well clear of a
+//   surface still reads as a wall in the horizon search and prints a grainy halo on it; here
+//   (RigAO) each sample is weighted by its true 3D distance, fading out between 0.12 and 0.3 m,
+//   so only geometry actually in contact shades. Flat or convex plate is never darkened.
+//   The noise pattern is fixed in screen space and the denoise is spatial only, so nothing
+//   crawls while the camera turns.
+const AO = {
+  studio: 1,
+  water: 0.85,
+  // The horizon search reads flat plate seen at a low angle as about 0.93 open, not 1: the
+  // finishing pass treats that as white, then applies the contrast curve, so open hull sides
+  // and the floor stay untouched and only real contact shades.
+  white: 0.94,
+  curve: 2.2,
+  params: { radius: 0.25, distanceExponent: 1.2, thickness: 0.2, distanceFallOff: 1, scale: 1, samples: 32 },
+};
+const aoHidden = [];
+const aoDrawn = [];
+const aoBox = new THREE.Box3();
+
+// What the occlusion pass must not see: the sky dome, the deep-water floor, the baked floor
+// shadow, and every transparent surface (glass, acrylic, decals) so the cabin interior seen
+// through the windows is shaded by its own geometry. Points and lines never contribute.
+function collectOcclusionHidden() {
+  aoHidden.length = 0;
+  aoDrawn.length = 0;
+  aoHidden.push(sky, underwater, contact.mesh);
+  for (const part of [current.boat, current.trailer, current.cradle]) {
+    part.traverse((o) => {
+      if (o.isPoints || o.isLine) aoHidden.push(o);
+      else if (o.isMesh) {
+        const m = Array.isArray(o.material) ? o.material[0] : o.material;
+        if ((Array.isArray(o.material) ? o.material.some((x) => x.transparent) : m.transparent) || !m.visible || !m.colorWrite) aoHidden.push(o);
+        else aoDrawn.push({ mesh: o, side: m.side, material: null });
+      }
+    });
+  }
+  aoDrawn.push({ mesh: floor, side: THREE.FrontSide, material: null }, { mesh: water, side: THREE.FrontSide, material: null });
+  // AO only round the rig: the floor and water just beyond it, nothing further out.
+  aoBox.copy(shadowBox).expandByScalar(0.35);
+  aoBox.min.y = Math.min(aoBox.min.y, -0.05);
+}
+
+// The occlusion pass's depth and normal render: each mesh drawn with a normal material of its
+// own material's side, so single-sided parts cull their back faces exactly as the beauty pass
+// does (an override material would force one side on everything: open shells would show their
+// insides, or double-sided sheets would vanish).
+const aoNormal = [THREE.FrontSide, THREE.BackSide, THREE.DoubleSide].map((side) => new THREE.MeshNormalMaterial({ side, blending: THREE.NoBlending }));
+class RigAO extends GTAOPass {
+  constructor(...args) {
+    super(...args);
+    // 3D range falloff instead of the view-depth-only thickness test (see AO above).
+    const m = this.gtaoMaterial;
+    const test = 'if (abs(viewDelta.z) < thickness) {';
+    const step = '* mix(1., 2. / float(j + 2), distanceFallOff))';
+    m.fragmentShader = m.fragmentShader
+      .replace(test, 'float range = 1.0 - smoothstep(thickness * 0.4, thickness, length(viewDelta)); if (range > 0.0) {')
+      .replace(test, 'range = 1.0 - smoothstep(thickness * 0.4, thickness, length(viewDelta)); if (range > 0.0) {')
+      .replaceAll(step, '* range * ' + step.slice(2))
+      // A small horizon bias: depth-buffer precision at a distance otherwise raises the horizon of
+      // flat plate and water seen at a low angle by a few degrees and greys them.
+      .replace('(sampleCosHorizon - cosHorizons.x)', '(sampleCosHorizon - cosHorizons.x - 0.03)')
+      .replace('(sampleCosHorizon - cosHorizons.y)', '(sampleCosHorizon - cosHorizons.y - 0.03)');
+    m.needsUpdate = true;
+  }
+
+  _overrideVisibility() {
+    for (const o of aoHidden) {
+      if (o.visible) {
+        o.visible = false;
+        this._visibilityCache.push(o);
+      }
+    }
+  }
+
+  _renderOverride(renderer, overrideMaterial, renderTarget, clearColor, clearAlpha) {
+    renderer.getClearColor(this._originalClearColor);
+    const alpha = renderer.getClearAlpha();
+    const autoClear = renderer.autoClear;
+    for (const e of aoDrawn) {
+      e.material = e.mesh.material;
+      e.mesh.material = aoNormal[e.side];
+    }
+    renderer.setRenderTarget(renderTarget);
+    renderer.autoClear = false;
+    renderer.setClearColor(clearColor, clearAlpha);
+    renderer.clear();
+    renderer.render(this.scene, this.camera);
+    for (const e of aoDrawn) {
+      e.mesh.material = e.material;
+      e.material = null;
+    }
+    renderer.autoClear = autoClear;
+    renderer.setClearColor(this._originalClearColor, alpha);
+  }
+}
+
+const post = lowPower ? null : createPost();
+
+function createPost() {
+  const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+  const size = new THREE.Vector2();
+  let ao = null;
+  const material = new THREE.ShaderMaterial({
+    uniforms: { tColor: { value: target.texture }, tAO: { value: null }, uAO: { value: 0 }, uDebug: { value: qaAO === 'view' ? 1 : 0 } },
+    depthTest: false,
+    depthWrite: false,
+    blending: THREE.NoBlending,
+    defines: { AO_WHITE: AO.white.toFixed(3), AO_CURVE: AO.curve.toFixed(3) },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tColor;
+      uniform sampler2D tAO;
+      uniform float uAO;
+      uniform float uDebug;
+      varying vec2 vUv;
+      float dither(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453) - 0.5; }
+      void main() {
+        vec4 c = texture2D(tColor, vUv);
+        float occ = mix(1.0, pow(clamp(texture2D(tAO, vUv).r / AO_WHITE, 0.0, 1.0), AO_CURVE), uAO);
+        float a = clamp(c.a, 0.0, 1.0);
+        // Un-premultiply so antialiased silhouettes tone map like their surface.
+        gl_FragColor = vec4(c.rgb / max(a, 1e-4) * occ, 1.0);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+        float alpha = 1.0 - (1.0 - a) * occ;
+        vec3 rgb = clamp(gl_FragColor.rgb * a + dither(gl_FragCoord.xy) / 255.0, 0.0, 1.0);
+        gl_FragColor = vec4(min(rgb, vec3(alpha)), alpha);
+        if (uDebug > 0.5) gl_FragColor = vec4(vec3(occ), 1.0);
+      }`,
+  });
+  const quad = new FullScreenQuad(material);
+
+  function occlusion(camera) {
+    if (!ao || ao.camera !== camera) {
+      if (ao) ao.dispose();
+      ao = new RigAO(scene, camera, 1, 1);
+      ao.output = GTAOPass.OUTPUT.Off;
+      ao.updateGtaoMaterial(AO.params);
+    }
+    // Full resolution up to a 2.5-megapixel buffer (a 1080p or 1440p stage at DPR 1); beyond
+    // that, on high-density screens, half resolution, which is still one sample per CSS pixel.
+    const scale = size.x * size.y > 2.5e6 ? 0.5 : 1;
+    const w = Math.max(1, Math.round(size.x * scale));
+    const h = Math.max(1, Math.round(size.y * scale));
+    if (ao.width !== w || ao.height !== h) {
+      ao.setSize(w, h);
+      ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 11 * scale, rings: 3, samples: 24 });
+    }
+    ao.setSceneClipBox(aoBox);
+    ao.render(renderer, null, target);
+    return ao.gtaoMap;
+  }
+
+  return {
+    render(camera) {
+      renderer.getDrawingBufferSize(size);
+      if (target.width !== size.x || target.height !== size.y) target.setSize(size.x, size.y);
+      renderer.setRenderTarget(target);
+      renderer.render(scene, camera);
+      const on = qaAO !== '0';
+      material.uniforms.tAO.value = on ? occlusion(camera) : null;
+      material.uniforms.uAO.value = on ? (onWater ? AO.water : AO.studio) : 0;
+      renderer.setRenderTarget(null);
+      quad.render(renderer);
+    },
+  };
+}
+
 // One shadow update, the reflection when afloat, then the frame itself.
 export function renderFrame(camera) {
+  if (qaPerf) qaPerf.camera = camera;
   renderer.shadowMap.needsUpdate = true;
   if (onWater) renderReflection(camera);
   sky.position.copy(camera.position);
-  renderer.render(scene, camera);
+  if (post) post.render(camera);
+  else renderer.render(scene, camera);
 }
 
 // Copies the frame in the same task it is rendered, over the studio backdrop the CSS draws.
 // Afloat, the reflection is re-rendered for this camera first.
 export function snapshot(camera) {
-  renderer.shadowMap.needsUpdate = true;
-  if (onWater) renderReflection(camera);
-  sky.position.copy(camera.position);
-  renderer.render(scene, camera);
+  renderFrame(camera);
   const out = document.createElement('canvas');
   out.width = canvas.width;
   out.height = canvas.height;

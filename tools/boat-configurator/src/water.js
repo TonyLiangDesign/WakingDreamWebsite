@@ -46,8 +46,11 @@ const skyChunk = /* glsl */ `
     vec3 col = mix(hor, uTop, 1.0 - exp(-h * 3.2));
     // Low haze band sitting on the horizon.
     col = mix(col, hor * 1.06, exp(-h * 22.0) * 0.6);
-    // Below the horizon (seen only by the environment): the sea, mirroring a cooler sky.
-    col = mix(col, mix(mix(hor, uTop, 0.55) * 0.55, uDeep * 1.4, smoothstep(0.0, 0.12, -dir.y)), smoothstep(0.0, 0.02, -dir.y));
+    // Below the horizon (seen only by the environment): the sea, mirroring a cooler sky. At a
+    // grazing angle water is a good mirror, so the first 10-15 degrees down stay a pale reflected
+    // sky before the deep colour takes over; topsides lean slightly outboard and down, and their
+    // clearcoat picks up that band as a soft gradient instead of a flat dark sheet.
+    col = mix(col, mix(mix(hor, uTop, 0.55) * 0.55, uDeep * 1.4, smoothstep(0.0, 0.35, -dir.y)), smoothstep(0.0, 0.02, -dir.y));
     float sun = max(dot(dir, uSunDir), 0.0);
     col += uSunColor * (pow(sun, 5.0) * 0.28 + pow(sun, 40.0) * 0.55 + pow(sun, 400.0) * 1.2);
     return col;
