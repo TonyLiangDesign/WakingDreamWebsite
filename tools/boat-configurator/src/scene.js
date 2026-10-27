@@ -4,7 +4,7 @@ import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { resolve } from './config.js';
 import { createMaterials, applyBuild } from './materials.js';
 import { buildBoat, disposeTree, TRAILER_LIFT, CRADLE_LIFT } from './boat/index.js';
-import { createSky, createWater, createUnderwater, waterlineUniforms, wetMaterial, SUN_DIR, WL_STATIONS } from './water.js';
+import { createSky, createWater, createUnderwater, waterlineUniforms, wetMaterial, seaHeight, SUN_DIR, WL_STATIONS } from './water.js';
 import { createSpray, createWhiteWater } from './spray.js';
 import { loadSkipper, placeSkipper } from './crew.js';
 
@@ -280,7 +280,9 @@ function applyScene(build) {
       const t = a.bow * (i / WL_STATIONS);
       return waterlineHalfWidth(current.lines, t, a.wl(t));
     });
-    u.uWash.value = current.engines.length > 1 ? 0.62 : 0.32;
+    // Each prop's wash; twins run two streams that merge astern.
+    u.uWash.value = 0.3;
+    u.uProp.value = current.engines.length > 1 ? Math.abs(current.engines[0][1]) : 0;
     u.uChine.value = current.lines.section(0.3).zc;
     spray.setRig(sprayRig(current.lines, current.engines, a.bow));
   } else {
@@ -596,28 +598,57 @@ export function renderReflection(camera) {
 }
 
 // The running motion, the streaming sea, the spray and the underwater-light glow, once a frame.
-// Underway on a light chop: a quick pitch and heave with a firmer slam every few seconds, a slow
-// roll and a little yaw as the helm holds her course. Reduced motion holds a still frame of it.
+// Underway she rides the chop the water draws (seaHeight): heave and pitch follow the sea averaged
+// over the wetted bottom, which a planing hull bridges for anything much shorter than itself, and
+// roll follows it across the chines. Each axis follows through a soft, well-damped spring, so she
+// lags and settles like a 1.5-tonne hull instead of tracing the water. Every 3.5-6 s a bigger
+// wave launches the bow and she drops back onto it (ride.slam, 0..1, peaks as the bow lifts).
+// A little yaw as the helm holds her course. Reduced motion holds her still at trim.
 const glowPoint = new THREE.Vector3();
 const aftAxis = new THREE.Vector3();
+export const ride = { heave: 0, vHeave: 0, pitch: 0, vPitch: 0, roll: 0, vRoll: 0, slam: 0, nextSlam: 3 };
+// Natural frequency (rad/s) and damping ratio per axis.
+const RIDE = { heave: [3.5, 0.8], pitch: [3, 0.8], roll: [2.2, 0.6] };
+function spring(axis, vel, target, dt) {
+  const [w, z] = RIDE[axis];
+  ride[vel] += (w * w * (target - ride[axis]) - 2 * z * w * ride[vel]) * dt;
+  ride[axis] += ride[vel] * dt;
+}
 let lastT = 0;
 export function tick(t) {
-  const dt = t - lastT;
+  const dt = clamp(t - lastT, 0, 0.05);
   lastT = t;
   if (!onWater) return;
   const run = reduceMotion ? 0 : 1;
-  const k = (t % 4.7) / 4.7;
-  const slam = k < 0.1 ? Math.sin((k / 0.1) * Math.PI) : 0;
-  vessel.position.y = lift + (Math.sin(t * 1.9) * 0.01 + Math.sin(t * 3.3 + 0.7) * 0.004 + slam * 0.012) * run;
-  vessel.rotation.set(
-    (Math.sin(t * 0.7) * 0.011 + Math.sin(t * 2.3 + 0.4) * 0.003) * run,
-    Math.sin(t * 0.43 + 1.2) * 0.004 * run,
-    trim + (Math.sin(t * 1.9 + 0.9) * 0.006 + Math.sin(t * 3.7) * 0.0025 - slam * 0.01) * run,
-  );
   const u = water.material.uniforms;
   u.uTime.value = t * run;
   // Wrapped well short of where float precision would coarsen the streaming ripples and foam.
   u.uFlow.value = ((UNDERWAY.speed * t) % 20000) * run;
+  if (run) {
+    // The sea at four stations along the keel from the transom to the spray root, and across the
+    // chines amidships.
+    const x0 = u.uHullX.value.x;
+    const len = u.uHullX.value.y;
+    const xm = x0 + len / 2;
+    const b = u.uChine.value;
+    let mean = 0;
+    let slope = 0;
+    for (let i = 0; i < 4; i++) {
+      const x = x0 + (len * (i + 0.5)) / 4;
+      const h = seaHeight(x, 0, u.uFlow.value, u.uTime.value);
+      mean += h / 4;
+      slope += ((x - xm) * h) / ((len * len * 5) / 16);
+    }
+    const heel = (seaHeight(xm, -b, u.uFlow.value, u.uTime.value) - seaHeight(xm, b, u.uFlow.value, u.uTime.value)) / (2 * b);
+    if (t >= ride.nextSlam) ride.nextSlam = t + 3.5 + 2.5 * (0.5 + 0.5 * Math.sin(t * 12.9898));
+    const k = 1 - (ride.nextSlam - t) / 0.35;
+    ride.slam = k > 0 && k < 1 ? Math.sin(k * Math.PI) : 0;
+    spring('heave', 'vHeave', mean * 0.9 + ride.slam * 0.12, dt);
+    spring('pitch', 'vPitch', Math.atan(slope) * 0.7 + ride.slam * 0.09, dt);
+    spring('roll', 'vRoll', Math.atan(heel) * 0.8, dt);
+  }
+  vessel.position.y = lift + ride.heave * run;
+  vessel.rotation.set(ride.roll * run, Math.sin(t * 0.43 + 1.2) * 0.004 * run, trim + ride.pitch * run);
   whiteWater.mesh.material.uniforms.uFlow.value = u.uFlow.value;
   whiteWater.mesh.material.uniforms.uTime.value = u.uTime.value;
   current.boat.updateWorldMatrix(true, false);
