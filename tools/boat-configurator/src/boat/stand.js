@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { add, tube, loft, mergeStatic, spaced, v3, lerp, clamp01 } from './kit.js';
 import { KEEL_BAR } from './hull.js';
+import { POD } from './cockpit.js';
 import { bowEyePoint } from './fittings.js';
 
 // Stands: the braked trailer and the studio display cradle, each sized to the hull lines and
@@ -8,10 +10,11 @@ import { bowEyePoint } from './fittings.js';
 // waterline (boat y = 0) above the floor on each.
 //
 // Every point where a stand touches the boat comes from the lines API: keel rollers and keel
-// blocks are fitted to the underside of the keel bar (keel(t) less the bar), the bunks follow the
-// bottom plate between the outer lifting strake and the chine (section(t) yk/yc/zc), and the
-// snubber and bow eye are fitted to the stem. Stand-only materials (spangled galvanising, sawn
-// timber, bunk carpet, lamps) are built once and shared between rebuilds.
+// blocks are fitted to the underside of the keel bar (keel(t) less the bar), the bunks and the
+// cradle's jack-stand pads bear on the bottom plate between the outer lifting strake and the
+// chine (section(t) yk/yc/zc), and the snubber and bow eye are fitted to the stem. Stand-only
+// materials (spangled galvanising, painted timber, bunk carpet, tyre moulding, lamps) are built
+// once and shared between rebuilds.
 
 export const TRAILER_LIFT = 0.92;
 export const CRADLE_LIFT = 0.7;
@@ -67,6 +70,22 @@ function bunkBand(lines, t0, t1, width) {
     zMax = Math.min(zMax, s.zc - 0.015);
   }
   return { zIn, zOut: Math.min(zIn + width, zMax) };
+}
+
+// Bottom plate at boat x and half-width z (inside the chine): the straight V of section(x / L)
+// from the keel line to the chine root.
+function plateY(lines, x, z) {
+  const s = lines.section(clamp01(x / lines.L));
+  return s.yk + (s.yc - s.yk) * (z / s.zc);
+}
+
+// Point on the bottom plate at x, half-width z on side `side`, raised by lift, with the plate's
+// outward (downward) normal there, taken from the surface's slope both ways.
+function plateFrame(lines, x, z, side, lift) {
+  const d = 0.02;
+  const dydx = (plateY(lines, x + d, z) - plateY(lines, x - d, z)) / (2 * d);
+  const dydz = (plateY(lines, x, z + d) - plateY(lines, x, z - d)) / (2 * d);
+  return { P: v3(x, lift + plateY(lines, x, z), side * z), N: v3(dydx, -1, side * dydz).normalize() };
 }
 
 // Carpeted bunk bedded on the bottom plate between zIn and zOut, from t0 to t1. Returns frame(t):
@@ -187,12 +206,14 @@ function spangle() {
           if (d < best) { best = d; p = q; ox = x - qx; oy = y - qy; }
         }
       }
+      // Kept low in contrast: at hero distance a facet is about a pixel, and any more variation
+      // in shade or sheen reads as noise instead of metal.
       const facet = (ox * p.dx + oy * p.dy) / cell;
-      const v = 0.92 + 0.045 * p.shade + 0.012 * facet + (Math.random() - 0.5) * 0.02;
+      const v = 0.935 + 0.026 * p.shade + 0.007 * facet + (Math.random() - 0.5) * 0.01;
       const k = (y * S + x) * 4;
       col.data[k] = col.data[k + 1] = col.data[k + 2] = Math.max(0, Math.min(255, v * 255));
       col.data[k + 3] = 255;
-      const r = 0.5 + 0.11 * p.rough + 0.02 * facet;
+      const r = 0.52 + 0.06 * p.rough + 0.012 * facet;
       rgh.data[k] = rgh.data[k + 1] = rgh.data[k + 2] = Math.max(0, Math.min(255, r * 255));
       rgh.data[k + 3] = 255;
     }
@@ -234,142 +255,121 @@ function treadBump() {
   return canvasTexture(c, 1 / 0.04, false);
 }
 
-const SIDE_GRAIN = 1.2;   // metres of board per tile of the side-grain texture
-const END_GRAIN = 0.3;    // metres across the end-grain texture
-
-// Rough-sawn hardwood, eight boards of different tone stacked in one texture; each piece of
-// timber is mapped onto one board, so neighbouring pieces never match.
-function woodSide() {
-  const W = 512;
-  const H = 512;
-  const band = H / 8;
-  const [c, ctx] = canvas2d(W, H);
-  const tones = ['#7c5636', '#8d6640', '#6d4a2e', '#957049', '#7a5a3d', '#86603a', '#6a4d33', '#9a754d'];
-  tones.forEach((tone, b) => {
-    const y0 = b * band;
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(0, y0, W, band);
-    ctx.clip();
-    ctx.fillStyle = tone;
-    ctx.fillRect(0, y0, W, band);
-    // Running grain, wandering a little along the board.
-    for (let i = 0; i < 46; i++) {
-      const dark = Math.random() < 0.6;
-      ctx.strokeStyle = dark ? `rgba(48,28,14,${0.15 + Math.random() * 0.3})` : `rgba(200,160,115,${0.08 + Math.random() * 0.18})`;
-      ctx.lineWidth = 0.6 + Math.random() * (dark ? 2.2 : 1.4);
-      const yy = y0 + Math.random() * band;
-      const f = 0.004 + Math.random() * 0.01;
-      const ph = Math.random() * 6;
-      const amp = 1 + Math.random() * 4;
-      ctx.beginPath();
-      for (let x = 0; x <= W; x += 8) {
-        const y = yy + Math.sin(x * f + ph) * amp + Math.sin(x * f * 3.1 + ph * 2) * amp * 0.25;
-        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    // Cathedral figure on some boards.
-    if (b % 3 !== 1) {
-      const cx = Math.random() * W;
-      const cy = y0 + band * (0.3 + Math.random() * 0.4);
-      for (let k = 0; k < 7; k++) {
-        ctx.strokeStyle = `rgba(52,30,15,${0.22 + Math.random() * 0.15})`;
-        ctx.lineWidth = 1 + Math.random() * 1.5;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, 30 + k * 16, 4 + k * 3.2, 0, -Math.PI * 0.95, Math.PI * 0.95);
-        ctx.stroke();
-      }
-    }
-    // A knot or two.
-    for (let k = 0; k < (b % 2 ? 1 : 2); k++) {
-      const x = Math.random() * W;
-      const y = y0 + band * (0.25 + Math.random() * 0.5);
-      for (let r = 9; r > 0; r -= 2) {
-        ctx.fillStyle = `rgba(${40 + r * 4},${24 + r * 3},${12 + r},${0.35 + (9 - r) * 0.06})`;
-        ctx.beginPath();
-        ctx.ellipse(x, y, r * 1.7, r * 0.75, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    // Saw marks across the face and the odd weathering stain.
-    for (let x = Math.random() * 14; x < W; x += 9 + Math.random() * 8) {
-      ctx.strokeStyle = `rgba(${Math.random() < 0.5 ? '255,235,205' : '40,25,12'},0.05)`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(x, y0);
-      ctx.quadraticCurveTo(x + 6, y0 + band / 2, x, y0 + band);
-      ctx.stroke();
-    }
-    const sx = Math.random() * W;
-    const grad = ctx.createRadialGradient(sx, y0 + band / 2, 0, sx, y0 + band / 2, 90);
-    grad.addColorStop(0, 'rgba(30,20,12,0.16)');
-    grad.addColorStop(1, 'rgba(30,20,12,0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, y0, W, band);
-    ctx.restore();
-  });
-  noise(ctx, W, H, 26);
-  return canvasTexture(c);
-}
-
-// End grain: growth rings round a pith off to one side, a few drying checks and saw scoring.
-function woodEnd() {
-  const S = 256;
-  const [c, ctx] = canvas2d(S, S);
-  ctx.fillStyle = '#7f5a39';
-  ctx.fillRect(0, 0, S, S);
-  const px = -14 + Math.random() * 10;
-  const py = S + 8 + Math.random() * 10;
-  for (let r = 3; r < 380; r += 3 + Math.random() * 4) {
-    ctx.strokeStyle = `rgba(40,22,9,${0.35 + Math.random() * 0.35})`;
-    ctx.lineWidth = 0.8 + Math.random() * 2;
-    ctx.beginPath();
-    ctx.arc(px, py, r, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-  const grad = ctx.createRadialGradient(px, py, 0, px, py, 420);
-  grad.addColorStop(0, 'rgba(50,28,12,0.35)');
-  grad.addColorStop(1, 'rgba(50,28,12,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, S, S);
-  for (let i = 0; i < 9; i++) {
-    const a = -Math.PI / 2 + Math.random() * (Math.PI / 2);
-    const r0 = 60 + Math.random() * 120;
-    const r1 = r0 + 30 + Math.random() * 120;
-    ctx.strokeStyle = 'rgba(25,14,6,0.75)';
-    ctx.lineWidth = 0.8 + Math.random() * 1.4;
-    ctx.beginPath();
-    ctx.moveTo(px + Math.cos(a) * r0, py + Math.sin(a) * r0);
-    ctx.lineTo(px + Math.cos(a + 0.02) * r1, py + Math.sin(a + 0.02) * r1);
-    ctx.stroke();
-  }
-  for (let y = 0; y < S; y += 3 + Math.random() * 4) {
-    ctx.strokeStyle = `rgba(${Math.random() < 0.5 ? '255,230,200' : '30,18,8'},0.06)`;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(S, y + 40);
-    ctx.stroke();
-  }
-  noise(ctx, S, S, 34);
-  return canvasTexture(c);
-}
-
-// Bunk carpet: dense dark loop pile. One tile is 80 mm.
+// Bunk carpet: dark marine loop pile tufted in rows along the bunk (canvas y runs along it), with
+// loose fibres lying the same way. One tile is 80 mm, so a row is 2.5 mm.
 function carpetTexture() {
   const S = 128;
   const [c, ctx] = canvas2d(S, S);
-  ctx.fillStyle = '#3a3e43';
+  ctx.fillStyle = '#34383d';
   ctx.fillRect(0, 0, S, S);
-  for (let i = 0; i < 2600; i++) {
-    const v = Math.random() < 0.5 ? 20 + Math.random() * 30 : 85 + Math.random() * 40;
-    ctx.fillStyle = `rgba(${v},${v + 3},${v + 7},0.55)`;
-    const a = Math.random() * Math.PI;
-    ctx.fillRect(Math.random() * S, Math.random() * S, 1 + Math.abs(Math.cos(a)) * 2, 1 + Math.abs(Math.sin(a)) * 2);
+  for (let x = 0; x < S; x += 4) {
+    for (let y = Math.random() * 2; y < S - 1; y += 2.4 + Math.random() * 0.6) {
+      const v = 62 + Math.random() * 40;
+      ctx.fillStyle = `rgba(${v},${v + 3},${v + 7},0.7)`;
+      ctx.beginPath();
+      ctx.ellipse(x + 2 + (Math.random() - 0.5) * 0.8, y + 1, 1.5, 1.25, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
-  noise(ctx, S, S, 22);
+  for (let i = 0; i < 420; i++) {
+    const v = Math.random() < 0.5 ? 18 + Math.random() * 20 : 95 + Math.random() * 30;
+    ctx.strokeStyle = `rgba(${v},${v + 3},${v + 6},0.22)`;
+    ctx.lineWidth = 0.6;
+    const x = Math.random() * S;
+    const y = Math.random() * S;
+    const a = Math.PI / 2 + (Math.random() - 0.5) * 0.7;
+    const l = 2 + Math.random() * 5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l);
+    ctx.stroke();
+  }
+  noise(ctx, S, S, 12);
   return canvasTexture(c, 1 / 0.08);
+}
+
+// Tyre moulding, as a bump map (mid grey is the plain surface, lighter is raised). The tyre's
+// UVs put the sidewall in rows 0-127, bead (row 0) to shoulder (row 127), about a millimetre a
+// row, and the tread across its width in rows 128-255; u runs once round the tyre. The sidewall
+// carries moulded rings at the rim line, a band of generic service markings (no brand or size)
+// twice round, and ribs at the shoulder; the tread has lateral grooves in the shoulder ribs and
+// sipes in the centre ribs.
+const TYRE_ROWS = 256;
+function tyreBump() {
+  const W = 2048;
+  const H = TYRE_ROWS;
+  const [c, ctx] = canvas2d(W, H);
+  ctx.fillStyle = '#808080';
+  ctx.fillRect(0, 0, W, H);
+  // Rim-line rings by the bead.
+  ctx.fillStyle = '#a0a0a0';
+  ctx.fillRect(0, 12, W, 2);
+  ctx.fillRect(0, 18, W, 1);
+  ctx.fillStyle = '#686868';
+  ctx.fillRect(0, 24, W, 1);
+  // Markings band (rows 46-84). Canvas x is about 0.75 mm round the tyre and a row about 1 mm
+  // out from the rim, so the text is stretched along x to keep its proportions.
+  ctx.fillStyle = '#b4b4b4';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  for (const k of [0, 1]) {
+    ctx.save();
+    ctx.translate(k * (W / 2) + 40, 0);
+    ctx.scale(1.35, 1);
+    ctx.font = 'bold 17px Arial, Helvetica, sans-serif';
+    ctx.fillText('RADIAL  TUBELESS', 0, 64);
+    ctx.font = 'bold 13px Arial, Helvetica, sans-serif';
+    ctx.fillText('LIGHT TRUCK   C', 250, 64);
+    ctx.font = '8px Arial, Helvetica, sans-serif';
+    ctx.fillText('MAX LOAD 850 KG   MAX PRESS 450 KPA', 6, 50);
+    ctx.fillText('TREAD 2 POLYESTER + 2 STEEL   SIDEWALL 2 POLYESTER', 6, 79);
+    ctx.font = 'bold 12px Arial, Helvetica, sans-serif';
+    ctx.fillText('M+S', 470, 64);
+    ctx.restore();
+  }
+  // Shoulder ribs: short radial dashes.
+  ctx.fillStyle = '#9a9a9a';
+  for (let x = 0; x < W; x += 16) ctx.fillRect(x, 110, 6, 17);
+  // Tread: rows 128-255 across the tread width; circumferential grooves are in the geometry at
+  // the quarter points (rows 128 + 127 * {0.21, 0.5, 0.79}).
+  const row = (u) => 128 + 127 * u;
+  ctx.fillStyle = '#3a3a3a';
+  for (let x = 0; x < W; x += 30) {
+    for (const [u0, u1] of [[0, 0.17], [0.83, 1]]) ctx.fillRect(x, row(u0), 7, row(u1) - row(u0));
+  }
+  ctx.fillStyle = '#5a5a5a';
+  for (const [u0, u1, off] of [[0.25, 0.46, 0], [0.54, 0.75, 9]]) {
+    for (let x = off; x < W + 20; x += 18) {
+      ctx.beginPath();
+      ctx.moveTo(x, row(u0));
+      ctx.lineTo(x + 6, row((u0 + u1) / 2));
+      ctx.lineTo(x, row(u1));
+      ctx.lineTo(x + 2, row(u1));
+      ctx.lineTo(x + 8, row((u0 + u1) / 2));
+      ctx.lineTo(x + 2, row(u0));
+      ctx.fill();
+    }
+  }
+  // Roughness from the same moulding: raised lettering and ribs are smoother (they come out of
+  // polished parts of the mould and catch the light), grooves a little rougher.
+  const [rc, rx] = canvas2d(W, H);
+  const src = ctx.getImageData(0, 0, W, H);
+  const out = rx.createImageData(W, H);
+  for (let i = 0; i < src.data.length; i += 4) {
+    const b = src.data[i];
+    const r = b > 136 ? 0.68 : b < 120 ? 0.96 : 0.9;
+    out.data[i] = out.data[i + 1] = out.data[i + 2] = r * 255;
+    out.data[i + 3] = 255;
+  }
+  rx.putImageData(out, 0, 0);
+  const tex = (canvas) => {
+    const t = new THREE.CanvasTexture(canvas);
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.ClampToEdgeWrapping;
+    t.anisotropy = 8;
+    return t;
+  };
+  return { bump: tex(c), rough: tex(rc) };
 }
 
 // LED lens: a grid of diodes behind the coloured lens.
@@ -416,21 +416,19 @@ function standMats() {
   // Shared: disposeTree() must not free these when a boat is swapped out.
   const shared = (mat) => { mat.userData.shared = true; return mat; };
   const sp = spangle();
-  const side = woodSide();
-  side.repeat.set(1 / SIDE_GRAIN, 1);
-  const end = woodEnd();
-  end.repeat.set(1 / END_GRAIN, 1 / END_GRAIN);
-  end.wrapS = end.wrapT = THREE.ClampToEdgeWrapping;
   const carpet = carpetTexture();
+  const tyre = tyreBump();
   const galv = { color: '#a9aeb1', metalness: 0.85, roughness: 1, map: sp.map, roughnessMap: sp.rough };
   MATS = {
     galv: shared(new THREE.MeshStandardMaterial(galv)),
     rim: shared(new THREE.MeshStandardMaterial({ ...galv, side: THREE.DoubleSide })),
+    // Zinc-plated wheel nuts, jack screws and hub caps: brighter and smoother than the dip.
+    zinc: shared(new THREE.MeshStandardMaterial({ color: '#c4c8cb', metalness: 0.9, roughness: 0.32 })),
     tread: shared(new THREE.MeshStandardMaterial({ color: '#b0b5b7', metalness: 0.85, roughness: 0.5, map: sp.map, bumpMap: treadBump(), bumpScale: 2.5 })),
-    woodSide: shared(new THREE.MeshStandardMaterial({ map: side, bumpMap: side, bumpScale: 1.2, roughness: 0.88 })),
-    woodEnd: shared(new THREE.MeshStandardMaterial({ map: end, bumpMap: end, bumpScale: 1.6, roughness: 0.94 })),
-    carpet: shared(new THREE.MeshStandardMaterial({ map: carpet, bumpMap: carpet, bumpScale: 2, roughness: 1 })),
-    powder: shared(new THREE.MeshStandardMaterial({ color: '#2d3135', metalness: 0.4, roughness: 0.48 })),
+    tyre: shared(new THREE.MeshStandardMaterial({ color: '#141516', roughness: 1, roughnessMap: tyre.rough, bumpMap: tyre.bump, bumpScale: 2.2 })),
+    // Display cradle: keel blocks in satin slate-grey paint.
+    paint: shared(new THREE.MeshStandardMaterial({ color: '#56616b', roughness: 0.5 })),
+    carpet: shared(new THREE.MeshStandardMaterial({ map: carpet, bumpMap: carpet, bumpScale: 1.2, roughness: 1 })),
     plastic: shared(new THREE.MeshStandardMaterial({ color: '#141516', roughness: 0.42 })),
     redLens: shared(new THREE.MeshStandardMaterial({ color: '#6a0f0c', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3a0705', '#ff3a2a'), emissiveIntensity: 0.9 })),
     amberLens: shared(new THREE.MeshStandardMaterial({ color: '#7a4a08', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3b2304', '#ffae2a'), emissiveIntensity: 0.6 })),
@@ -518,59 +516,93 @@ function channel(g, a, b, h, w, t, mat) {
   return span(add(g, geo, mat), a, b);
 }
 
-// Sawn timber, length along x (or z): side grain on the long faces from one random board of the
-// texture, end grain on the two ends from a random patch of rings.
-function timber(g, M, [len, h, w], [x, y, z], alongZ = false) {
-  const geo = new THREE.BoxGeometry(len, h, w);
-  const uv = geo.attributes.uv;
-  const set = (face, fn) => {
-    for (let k = 0; k < 4; k++) {
-      const i = face * 4 + k;
-      uv.setXY(i, ...fn(uv.getX(i), uv.getY(i)));
-    }
-  };
-  for (const f of [0, 1]) {
-    const eu = (0.03 + Math.random() * 0.22) * (END_GRAIN - w);
-    const ev = (0.03 + Math.random() * 0.22) * (END_GRAIN - h);
-    set(f, (u, v) => [eu + u * w, ev + v * h]);
-  }
-  const board = Math.floor(Math.random() * 8);
-  const along = Math.random() * 4;
-  for (const f of [2, 3, 4, 5]) set(f, (u, v) => [along + u * len, (board + 0.06 + 0.88 * v) / 8]);
-  const index = Array.from(geo.index.array);
-  const sides = geo.clone();
-  sides.setIndex(index.slice(12));
-  geo.setIndex(index.slice(0, 12));
-  for (const [part, mat] of [[sides, M.woodSide], [geo, M.woodEnd]]) {
-    const mesh = add(g, part, mat);
-    mesh.position.set(x, y, z);
-    if (alongZ) mesh.rotation.y = Math.PI / 2;
-  }
+// Planed and painted timber with eased arrises, centred at pos.
+function paintedTimber(g, M, [sx, sy, sz], pos) {
+  const mesh = add(g, new RoundedBoxGeometry(sx, sy, sz, 2, 0.007), M.paint);
+  mesh.position.set(...pos);
+  return mesh;
 }
 
-// Radial profile [r, a] (a along the axis) spun into a solid of revolution about z.
-function lathe(profile, seg) {
+// Sheet swept straight along z from z0 to z1 through a profile of [x, y] points, with smooth
+// normals on the side given by outward (+1: to the left of the direction of travel).
+function sweepZ(pts, z0, z1, outward) {
+  const pos = [];
+  const nrm = [];
+  const uv = [];
+  const idx = [];
+  let run = 0;
+  pts.forEach((p, i) => {
+    const a = pts[Math.max(0, i - 1)];
+    const b = pts[Math.min(pts.length - 1, i + 1)];
+    const l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const tx = (b[0] - a[0]) / l;
+    const ty = (b[1] - a[1]) / l;
+    if (i) run += Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]);
+    for (const z of [z0, z1]) {
+      pos.push(p[0], p[1], z);
+      nrm.push(ty * outward, -tx * outward, 0);
+      uv.push(run, z);
+    }
+  });
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = 2 * i;
+    if (outward * (z1 - z0) > 0) idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    else idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  return geo;
+}
+
+// Radial profile [r, a] (a along the axis) spun into a solid of revolution about z. vs, if
+// given, sets each profile point's texture v (u still runs once round); flipU reverses u.
+function lathe(profile, seg, vs = null, flipU = false) {
   const geo = new THREE.LatheGeometry(profile.map(([r, a]) => new THREE.Vector2(r, a)), seg);
+  if (vs) {
+    const uv = geo.attributes.uv;
+    const n = profile.length;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, flipU ? 1 - uv.getX(i) : uv.getX(i), vs[i % n]);
+  }
   geo.rotateX(Math.PI / 2);
+  return geo;
+}
+
+// Hex prism lathe with flat faces (nuts).
+function hexLathe(profile) {
+  const geo = lathe(profile, 6).toNonIndexed();
+  geo.computeVertexNormals();
   return geo;
 }
 
 // ---------- trailer parts ----------
 
-// Radial tyre on a galvanised steel rim, outer face towards +z (side = 1) or -z. R is the tyre
-// radius, rb the rim's bead radius, w the section width.
+// Radial light-truck tyre on a galvanised steel rim, outer face towards +z (side = 1) or -z. R is
+// the tyre radius, rb the rim's bead radius, w the section width. The tyre is three lathes (both
+// sidewalls and the tread) so each carries its own strip of the moulding texture: rim-line rings,
+// markings band and shoulder ribs on the sidewalls, three circumferential grooves in the geometry
+// with lateral grooves and sipes in the texture across the tread.
 function wheel(g, M, m, pos, side, R, rb, w) {
   const wg = new THREE.Group();
   const hw = w / 2;
-  const groove = (a) => [[R, a - 0.007], [R - 0.008, a - 0.005], [R - 0.008, a + 0.005], [R, a + 0.007]];
-  const tyre = [
-    [rb, -hw * 0.8], [rb + 0.022, -hw * 0.95], [lerp(rb, R, 0.45), -hw], [lerp(rb, R, 0.78), -hw * 0.97],
-    [R - 0.014, -hw * 0.86], [R - 0.003, -hw * 0.72],
-    ...groove(-hw * 0.42), ...groove(0), ...groove(hw * 0.42),
-    [R - 0.003, hw * 0.72], [R - 0.014, hw * 0.86],
-    [lerp(rb, R, 0.78), hw * 0.97], [lerp(rb, R, 0.45), hw], [rb + 0.022, hw * 0.95], [rb, hw * 0.8],
+  const seg = 36;
+  const crown = (a) => R - 0.004 * (a / hw) ** 2;
+  const vRow = (row) => 1 - (row + 0.5) / TYRE_ROWS;
+  // Sidewall, bead to shoulder: [r, axial fraction of hw].
+  const wall = [
+    [rb, 0.8], [rb + 0.009, 0.87], [rb + 0.016, 0.9], [rb + 0.03, 0.935], [lerp(rb, R, 0.42), 1],
+    [lerp(rb, R, 0.68), 0.985], [lerp(rb, R, 0.85), 0.945], [R - 0.017, 0.87], [R - 0.006, 0.79], [crown(0.72 * hw), 0.72],
   ];
-  add(wg, lathe(tyre, 32), m.tyre);
+  const wallV = (r) => vRow(127 * clamp01((r - rb) / (R - 0.017 - rb)));
+  const inner = wall.map(([r, f]) => [r, -f * hw]);
+  const outer = wall.map(([r, f]) => [r, f * hw]).reverse();
+  add(wg, lathe(inner, seg, inner.map(([r]) => wallV(r)), true), M.tyre);
+  add(wg, lathe(outer, seg, outer.map(([r]) => wallV(r))), M.tyre);
+  const groove = (a) => [[crown(a - 0.007), a - 0.007], [crown(a) - 0.009, a - 0.004], [crown(a) - 0.009, a + 0.004], [crown(a + 0.007), a + 0.007]];
+  const tread = [[crown(0.72 * hw), -0.72 * hw], ...groove(-0.42 * hw), ...groove(0), ...groove(0.42 * hw), [crown(0.72 * hw), 0.72 * hw]];
+  add(wg, lathe(tread, seg, tread.map(([, a]) => vRow(128 + 127 * (a / (0.72 * hw) + 1) / 2))), M.tyre);
   // Rim: flange, dish and the mounting face, seen from outside.
   const k = rb / 0.178;
   const face = hw * 0.62;
@@ -578,13 +610,15 @@ function wheel(g, M, m, pos, side, R, rb, w) {
     [rb + 0.014, hw * 0.74], [rb + 0.011, hw * 0.83], [rb + 0.002, hw * 0.84], [rb - 0.008, hw * 0.74],
     [rb - 0.022, hw * 0.5], [0.118 * k, hw * 0.46], [0.088 * k, face - 0.004], [0.072 * k, face], [0.001, face],
   ];
-  add(wg, scaleUV(lathe(rim, 32), 1.1, 0.2), M.rim);
+  add(wg, scaleUV(lathe(rim, seg), 1.1, 0.2), M.rim);
   // Inside of the rim barrel, closing the wheel when seen from behind.
   const back = add(wg, new THREE.CircleGeometry(rb, 24), m.rubber);
   back.position.z = -hw * 0.6;
   back.rotation.y = Math.PI;
-  // Vent holes in the dish, wheel nuts and the bearing protector.
+  // Vent holes in the dish; five flanged wheel nuts on a 114.3 mm circle, each with its stud
+  // end showing; the bearing protector with its grease nipple.
   const dishA = lerp(hw * 0.5, hw * 0.46, (rb - 0.022 - 0.137 * k) / (rb - 0.022 - 0.118 * k));
+  const nut = hexLathe([[0, 0], [0.0135, 0], [0.0135, 0.003], [0.011, 0.005], [0.011, 0.017], [0.0085, 0.0195], [0, 0.0195]]);
   for (let i = 0; i < 5; i++) {
     const a = ((i + 0.5) / 5) * Math.PI * 2;
     const hole = add(wg, new THREE.CircleGeometry(0.019 * k, 14), m.rubber, { cast: false });
@@ -592,30 +626,41 @@ function wheel(g, M, m, pos, side, R, rb, w) {
     hole.rotation.z = a + Math.PI / 2;
     hole.position.set(Math.cos(a) * 0.137 * k, Math.sin(a) * 0.137 * k, dishA + 0.003);
     const b = (i / 5) * Math.PI * 2;
-    disc(wg, 0.0105, 0.02, v3(Math.cos(b) * 0.054 * k, Math.sin(b) * 0.054 * k, face + 0.01), M.galv, 6);
+    const p = v3(Math.cos(b) * 0.05715, Math.sin(b) * 0.05715, face);
+    const n = add(wg, nut.clone(), M.zinc);
+    n.position.copy(p);
+    n.rotation.z = b;
+    disc(wg, 0.006, 0.006, p.clone().setZ(face + 0.0215), M.zinc, 8);
   }
-  disc(wg, 0.03, 0.034, v3(0, 0, face + 0.017), M.galv, 18, 0.034);
+  nut.dispose();
+  const cap = add(wg, lathe([[0, 0], [0.033, 0], [0.033, 0.014], [0.03, 0.03], [0.024, 0.036], [0.007, 0.036], [0.007, 0.042], [0.004, 0.046], [0, 0.046]], 14), M.zinc);
+  cap.position.z = face;
   wg.position.copy(pos);
   if (side < 0) wg.rotation.y = Math.PI;
   g.add(wg);
 }
 
-// Tandem mudguard over both wheels on one side: galvanised sheet with a rolled edge and a
-// treadplate step along the top. Returns the height of the top.
+// Tandem mudguard over both wheels on one side: 4 mm galvanised sheet, smooth over the arcs,
+// with a rolled bead along the outer edge, a lighter one along the inner edge and both ends, and
+// a treadplate step along the top. Returns the height of the top.
 function mudguard(g, M, xr, xf, R, z, width) {
   const Rg = R + 0.065;
-  const t = 0.003;
+  const t = 0.004;
   const profile = (r) => [
-    ...spaced(0.32, Math.PI / 2, 9).map((a) => [xf + Math.cos(a) * r, R + Math.sin(a) * r]),
-    ...spaced(Math.PI / 2, Math.PI - 0.32, 9).map((a) => [xr + Math.cos(a) * r, R + Math.sin(a) * r]),
+    ...spaced(0.32, Math.PI / 2, 18).map((a) => [xf + Math.cos(a) * r, R + Math.sin(a) * r]),
+    ...spaced(Math.PI / 2, Math.PI - 0.32, 18).map((a) => [xr + Math.cos(a) * r, R + Math.sin(a) * r]),
   ];
-  const outer = profile(Rg + t);
-  const inner = profile(Rg).reverse();
-  const geo = new THREE.ExtrudeGeometry(new THREE.Shape([...outer, ...inner].map(([x, y]) => new THREE.Vector2(x, y))), { depth: width, bevelEnabled: false });
-  geo.translate(0, 0, z - width / 2);
-  add(g, geo, M.galv);
-  const edge = Math.sign(z) * (Math.abs(z) + width / 2);
-  add(g, tube(outer.map(([x, y]) => v3(x, y, edge)), 0.006, 36, 5), M.galv);
+  const s = Math.sign(z);
+  const z0 = z - width / 2;
+  const z1 = z + width / 2;
+  add(g, sweepZ(profile(Rg + t), z0, z1, 1), M.galv);
+  add(g, sweepZ(profile(Rg), z0, z1, -1), M.galv);
+  const mid = profile(Rg + t / 2);
+  const edge = s * (Math.abs(z) + width / 2 - 0.004);
+  const inEdge = s * (Math.abs(z) - width / 2 + 0.002);
+  add(g, tube(mid.map(([x, y]) => v3(x, y, edge)), 0.008, 48, 6), M.galv);
+  add(g, tube(mid.map(([x, y]) => v3(x, y, inEdge)), 0.005, 48, 4), M.galv);
+  for (const [x, y] of [mid[0], mid[mid.length - 1]]) add(g, tube([v3(x, y, z0 + 0.002), v3(x, y, z1 - 0.002)], 0.0045, 2, 6), M.galv);
   const top = R + Rg + t;
   block(g, M.tread, [xf - xr + 0.06, 0.004, width - 0.05], [(xf + xr) / 2, top + 0.002, z]);
   return { top, Rg };
@@ -804,29 +849,51 @@ export function trailer(lines, m) {
     }
   }
 
-  // Rear light bar under the rail ends: LED combination lamps, number plate and its lamp.
-  const lightY = railBottom - 0.025;
+  // Light boards: an LED combination lamp each side on its own galvanised board, carried aft of
+  // the boarding pods on a 50 x 50 arm clamped under each main rail. Split boards stay clear of
+  // the engine legs (single or twin) and nothing of the boat hangs over them, so both lamps read
+  // from astern. The number plate hangs under the port board with its lamp hood.
+  const xBoard = -POD - 0.012 - 0.09;
+  const boardArmY = railBottom - 0.025;
+  const lightY = railY;
   const lampZ = wheelZ + 0.03;
-  rhs(g, v3(xRear + 0.025, lightY, -lampZ - 0.02), v3(xRear + 0.025, lightY, lampZ + 0.02), 0.05, 0.05, M.galv);
+  const boardIn = railZ - 0.035;
+  const boardOut = lampZ + 0.02;
+  const boardBot = boardArmY - 0.025;
+  const boardTop = lightY + 0.065;
   for (const s of [1, -1]) {
+    rhs(g, v3(xRear + 0.3, boardArmY, s * railZ), v3(xBoard + 0.006, boardArmY, s * railZ), 0.05, 0.05, M.galv);
+    for (const x of [xRear + 0.24, xRear + 0.06]) {
+      block(g, M.galv, [0.05, 0.008, 0.09], [x, boardArmY - 0.029, s * railZ]);
+      for (const dz of [-0.036, 0.036]) bar(g, v3(x, boardArmY - 0.036, s * railZ + dz), v3(x, railBottom + 0.006, s * railZ + dz), 0.005, M.galv, 6);
+    }
+    block(g, M.galv, [0.006, boardTop - boardBot, boardOut - boardIn], [xBoard + 0.003, (boardTop + boardBot) / 2, (s * (boardIn + boardOut)) / 2]);
+    // Gusset between arm and board.
+    rhs(g, v3(xBoard + 0.006, boardArmY + 0.022, s * railZ), v3(xBoard + 0.1, boardArmY + 0.022, s * railZ), 0.006, 0.006, M.galv);
     const z = s * (lampZ - 0.12);
-    block(g, M.plastic, [0.045, 0.1, 0.27], [xRear - 0.0225, lightY, z]);
-    panel(g, M.redLens, [0.006, 0.07, 0.15], [xRear - 0.047, lightY, z - s * 0.045], { cast: false });
-    panel(g, M.amberLens, [0.006, 0.07, 0.07], [xRear - 0.047, lightY, z + s * 0.08], { cast: false });
+    block(g, M.plastic, [0.045, 0.1, 0.27], [xBoard - 0.0225, lightY, z]);
+    panel(g, M.redLens, [0.006, 0.07, 0.15], [xBoard - 0.047, lightY, z - s * 0.045], { cast: false });
+    panel(g, M.amberLens, [0.006, 0.07, 0.07], [xBoard - 0.047, lightY, z + s * 0.08], { cast: false });
   }
-  const plateZ = -0.32;
-  block(g, M.plastic, [0.012, 0.15, 0.39], [xRear - 0.006, lightY - 0.035, plateZ]);
-  panel(g, M.plate, [0.003, 0.125, 0.37], [xRear - 0.0135, lightY - 0.035, plateZ], { cast: false });
-  block(g, M.plastic, [0.04, 0.025, 0.08], [xRear - 0.02, lightY + 0.05, plateZ]);
-  panel(g, M.whiteLens, [0.02, 0.004, 0.06], [xRear - 0.025, lightY + 0.0365, plateZ], { cast: false });
+  const plateZ = -(boardOut - 0.195);
+  const plateY = boardBot - 0.055;
+  block(g, M.plastic, [0.012, 0.15, 0.39], [xBoard - 0.006, plateY + 0.01, plateZ]);
+  panel(g, M.plate, [0.003, 0.125, 0.37], [xBoard - 0.0135, plateY, plateZ], { cast: false });
+  block(g, M.plastic, [0.04, 0.022, 0.08], [xBoard - 0.032, plateY + 0.074, plateZ]);
+  panel(g, M.whiteLens, [0.02, 0.004, 0.06], [xBoard - 0.035, plateY + 0.061, plateZ], { cast: false });
 
-  // Wiring: lamp to lamp along the light bar, up into the port rail and forward to the plug,
-  // which sits in its holder on the drawbar.
+  // Wiring: from each lamp forward along its arm and up into the rail; the starboard lead crosses
+  // just forward of the rear cross-member to join the port loom, which runs forward inside the
+  // port rail to the plug in its holder on the drawbar.
   const wireY = railY - 0.035;
   const plug = v3(xCoup - 0.62, dbY - 0.02, -(dbW / 2 + 0.028));
-  add(g, tube([v3(xRear + 0.004, lightY + 0.03, lampZ - 0.14), v3(xRear + 0.004, lightY + 0.03, -lampZ + 0.14)], 0.005, 8, 6), m.rubber, { cast: false });
+  const lead = (s) => [
+    v3(xBoard + 0.008, lightY - 0.03, s * (railZ + 0.07)), v3(xBoard + 0.1, boardArmY, s * (railZ + 0.052)),
+    v3(xRear + 0.1, boardArmY, s * (railZ + 0.052)), v3(xRear + 0.16, wireY, s * (railZ + webIn)),
+  ];
+  add(g, tube([...lead(1), v3(xRear + 0.12, wireY, railZ - 0.06), v3(xRear + 0.1, wireY, 0), v3(xRear + 0.12, wireY, -(railZ - 0.06)), v3(xRear + 0.2, wireY, -(railZ + webIn))], 0.005, 60, 5), m.rubber, { cast: false });
   const loom = [
-    v3(xRear + 0.004, lightY + 0.03, -(railZ + 0.05)), v3(xRear + 0.06, wireY, -(railZ + webIn)), v3(xTaper - 0.2, wireY, -(railZ + webIn)),
+    ...lead(-1), v3(xTaper - 0.2, wireY, -(railZ + webIn)),
     v3(xTaper + 0.4, wireY, -(angledZ(xTaper + 0.4) + webIn)), v3(xApex - 0.2, wireY, -(angledZ(xApex - 0.2) + webIn)),
     v3(xApex + 0.08, dbY - 0.02, -(dbW / 2 + 0.006)), v3(plug.x - 0.16, dbY - 0.02, -(dbW / 2 + 0.006)),
     v3(plug.x - 0.1, dbY - 0.15, -(dbW / 2 + 0.02)), v3(plug.x - 0.035, plug.y, plug.z),
@@ -892,8 +959,11 @@ export function trailer(lines, m) {
   disc(g, 0.032, 0.014, v3(jx, dbTop + 0.165, jz), M.galv, 14);
   for (const dz of [-0.042, 0.042]) block(g, M.galv, [0.05, 0.05, 0.006], [jx, 0.115, jz + dz]);
   block(g, M.galv, [0.05, 0.006, 0.09], [jx, 0.14, jz]);
-  disc(g, 0.1, 0.062, v3(jx, 0.1, jz), m.tyre, 22);
-  disc(g, 0.055, 0.066, v3(jx, 0.1, jz), M.galv, 16);
+  // Solid rubber tyre with a rounded crown on a pressed-steel wheel.
+  const jTyre = [[0.056, -0.028], [0.072, -0.031], [0.09, -0.028], [0.098, -0.02], [0.1, -0.008], [0.1, 0.008], [0.098, 0.02], [0.09, 0.028], [0.072, 0.031], [0.056, 0.028]];
+  add(g, lathe(jTyre, 24), m.tyre).position.set(jx, 0.1, jz);
+  const jRim = [[0, -0.035], [0.012, -0.035], [0.02, -0.026], [0.034, -0.022], [0.05, -0.03], [0.058, -0.029], [0.058, 0.029], [0.05, 0.03], [0.034, 0.022], [0.02, 0.026], [0.012, 0.035], [0, 0.035]];
+  add(g, scaleUV(lathe(jRim, 20), 0.4, 0.1), M.galv).position.set(jx, 0.1, jz);
   bar(g, v3(jx, 0.1, jz - 0.048), v3(jx, 0.1, jz + 0.048), 0.008, M.galv, 8);
 
   // Winch post, snubber arm and winch. The rubber vee snubber is tilted to the stem's rake, its
@@ -978,58 +1048,69 @@ export function trailer(lines, m) {
 
 // ---------- cradle ----------
 
-// Display cradle: three timber keel stacks (one under the transom) and carpeted bunks either side
-// just inboard of the chines, on braced powder-coated stands tied across under the keel.
+// Showroom display cradle, blocked as a boatyard blocks a trailer boat. Three painted timber keel
+// blocks take the weight on the keel bar: one under the transom and two along the level keel,
+// each square and level with its rubber pad flat on the bar. Four galvanised screw-jack stands
+// steady the hull, each swivel pad square to the bottom plate between the outer lifting strake
+// and the chine.
 export function cradle(lines, m) {
   const M = standMats();
   const g = new THREE.Group();
-  const { L } = lines;
+  const { L, B } = lines;
   const lift = CRADLE_LIFT;
 
-  // Keel stacks: three crossed layers of sawn hardwood, a cap block and a rubber pad.
-  const stack = (x0, x1) => {
-    const xc = (x0 + x1) / 2;
-    const top = keelFlat(lines, x0, x1, lift);
-    const pad = 0.012;
-    const cap = 0.09;
-    const layer = (top - pad - cap) / 3;
-    timber(g, M, [0.72, layer, 0.15], [xc - 0.14, layer / 2, 0.012], true);
-    timber(g, M, [0.7, layer, 0.15], [xc + 0.145, layer / 2, -0.01], true);
-    timber(g, M, [x1 - x0 + 0.02, layer, 0.15], [xc + 0.006, layer * 1.5, 0.165]);
-    timber(g, M, [x1 - x0 - 0.01, layer, 0.15], [xc - 0.004, layer * 1.5, -0.168]);
-    timber(g, M, [0.56, layer, 0.15], [xc - 0.125, layer * 2.5, -0.006], true);
-    timber(g, M, [0.58, layer, 0.15], [xc + 0.13, layer * 2.5, 0.008], true);
-    timber(g, M, [x1 - x0, cap, 0.2], [xc, layer * 3 + cap / 2, 0]);
-    block(g, m.rubber, [x1 - x0 - 0.04, pad, 0.15], [xc, top - pad / 2, 0]);
+  // Keel block: two bearers across, a two-high fore-and-aft block on them, a rubber pad on top.
+  const pad = 0.012;
+  const keelBlock = (xc) => {
+    const len = 0.46;
+    const top = keelFlat(lines, xc - len / 2 + 0.02, xc + len / 2 - 0.02, lift);
+    const h = (top - pad) / 3;
+    for (const dx of [-0.15, 0.15]) paintedTimber(g, M, [0.15, h, 0.56 * (B / 2.4)], [xc + dx, h / 2, 0]);
+    for (const k of [1, 2]) paintedTimber(g, M, [len, h, 0.18], [xc, h * (k + 0.5), 0]);
+    block(g, m.rubber, [len - 0.04, pad, 0.12], [xc, top - pad / 2, 0]);
   };
-  stack(0.01, 0.47);
-  for (const t of [0.33, 0.5]) stack(t * L - 0.23, t * L + 0.23);
+  for (const x of [0.3, 0.34 * L, 0.56 * L]) keelBlock(x);
 
-  // Bunks, and a stand under each end of each bunk.
-  const t0 = 0.03;
-  const t1 = 0.5;
-  const band = bunkBand(lines, t0, t1, 0.15);
-  const frames = [1, -1].map((s) => bunk(g, M.carpet, lines, lift, t0, t1, band, s));
-  const pad = 0.008;
-  const footH = 0.06;
-  const footTop = pad + footH;
-  for (const t of [0.13, 0.42]) {
-    const x = t * L;
-    let reach = 0;
-    [1, -1].forEach((s, i) => {
-      const pivot = saddle(g, M, frames[i](t), s, x, M.powder);
-      const z = pivot.z;
-      reach = Math.max(reach, Math.abs(z));
-      // Foot along the boat on rubber pads, post up to the pivot, braced fore and aft and inboard.
-      rhs(g, v3(x - 0.36, pad + footH / 2, z), v3(x + 0.36, pad + footH / 2, z), 0.08, footH, M.powder);
-      for (const dx of [-0.32, 0.32]) block(g, m.rubber, [0.07, pad, 0.09], [x + dx, pad / 2, z]);
-      rhs(g, v3(x, footTop, z), v3(x, pivot.y - 0.019, z), 0.07, 0.07, M.powder);
-      block(g, M.powder, [0.12, 0.01, 0.12], [x, footTop + 0.005, z]);
-      for (const dx of [-0.32, 0.32]) rhs(g, v3(x + dx, footTop, z), v3(x + Math.sign(dx) * 0.035, footTop + 0.36, z), 0.04, 0.04, M.powder);
-      rhs(g, v3(x, 0.05, z - s * 0.42), v3(x, footTop + 0.4, z - s * 0.035), 0.04, 0.04, M.powder);
-    });
-    // Floor tie across under the keel, lower than the feet so no faces coincide.
-    rhs(g, v3(x, 0.025, -(reach + 0.04)), v3(x, 0.025, reach + 0.04), 0.08, 0.05, M.powder);
-  }
+  // Screw-jack stand at x on side s: a tripod of round-tube legs welded to a centre tube, an acme
+  // screw wound up through a tommy-bar nut, and a ball-jointed pad, rubber faced, bedded 0.8 mm
+  // into the plate (the plate is flat to 0.6 mm under it) and square to it.
+  const nut = hexLathe([[0, 0], [0.036, 0], [0.036, 0.034], [0, 0.034]]);
+  nut.rotateX(-Math.PI / 2);
+  const jack = (x, s) => {
+    const band = bunkBand(lines, (x - 0.1) / L, (x + 0.1) / L, 0.3);
+    const z = (band.zIn + band.zOut) / 2;
+    const { P, N } = plateFrame(lines, x, z, s, lift);
+    const q = new THREE.Quaternion().setFromUnitVectors(UP, N.clone().negate());
+    const face = P.clone().addScaledVector(N, -0.0008);
+    const along = (d) => face.clone().addScaledVector(N, d);
+    const tilted = (geo, d, mat) => {
+      const mesh = add(g, geo, mat);
+      mesh.quaternion.copy(q);
+      mesh.position.copy(along(d));
+      return mesh;
+    };
+    tilted(boxGeo(0.17, 0.015, 0.17), 0.0075, m.rubber);
+    tilted(boxGeo(0.16, 0.008, 0.16), 0.019, M.galv);
+    tilted(new THREE.CylinderGeometry(0.028, 0.02, 0.024, 16), 0.035, M.galv);
+    const ball = along(0.055);
+    add(g, new THREE.SphereGeometry(0.02, 14, 10), M.zinc).position.copy(ball);
+    const nutY = ball.y - 0.17;
+    bar(g, v3(ball.x, ball.y - 0.012, ball.z), v3(ball.x, nutY - 0.06, ball.z), 0.015, M.zinc, 12);
+    add(g, nut.clone(), M.galv).position.set(ball.x, nutY, ball.z);
+    bar(g, v3(ball.x - 0.15, nutY + 0.017, ball.z), v3(ball.x + 0.15, nutY + 0.017, ball.z), 0.008, M.zinc, 8);
+    const tubeBot = 0.22;
+    bar(g, v3(ball.x, tubeBot, ball.z), v3(ball.x, nutY, ball.z), 0.03, M.galv, 16);
+    const legTop = 0.3;
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2;
+      const dx = Math.sin(a);
+      const dz = s * Math.cos(a);
+      const foot = v3(ball.x + dx * 0.38, 0.012, ball.z + dz * 0.38);
+      bar(g, v3(ball.x + dx * 0.022, legTop, ball.z + dz * 0.022), foot.clone().add(v3(0, 0.004, 0)), 0.016, M.galv, 10);
+      block(g, M.galv, [0.075, 0.008, 0.075], [foot.x, 0.004, foot.z]);
+    }
+  };
+  for (const t of [0.2, 0.47]) for (const s of [1, -1]) jack(t * L, s);
+  nut.dispose();
   return mergeStatic(g);
 }
