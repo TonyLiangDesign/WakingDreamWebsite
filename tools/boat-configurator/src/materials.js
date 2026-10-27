@@ -254,8 +254,10 @@ function vinylGrain() {
 // the features a part does not use contribute nothing: a 1x1 white map, roughness map and
 // emissive map multiply by one; a 1x1 flat normal map and clearcoat normal map with a zero scale
 // leave the normal alone; a vanishing, fully rough clearcoat adds under 1e-5 of radiance; and
-// sheen with a black sheen colour is zero by construction. What the shader still has to tell apart
-// is transparency, a bump map (the trailer's; a normal map would override it) and the side.
+// sheen with a black sheen colour is zero by construction. Every lit material is also two-sided
+// and carries any relief as a normal map (a bump map is converted, see bumpToNormal), so the only
+// thing the shader still has to tell apart is transparency: one program for the opaque parts of
+// the boat, one for its glass and decals.
 const pixel = (r, g, b, colorSpace) => {
   const texture = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1);
   texture.colorSpace = colorSpace;
@@ -266,6 +268,13 @@ const BLANK = { white: pixel(255, 255, 255, THREE.SRGBColorSpace), one: pixel(25
 const NO_CLEARCOAT = 1e-6;
 export function lit(params = {}) {
   const p = { ...params };
+  p.side ??= THREE.DoubleSide;
+  if (p.bumpMap) {
+    p.normalMap = bumpToNormal(p.bumpMap, p.bumpScale ?? 1);
+    p.normalScale = new THREE.Vector2(1, 1);
+    delete p.bumpMap;
+    delete p.bumpScale;
+  }
   p.map ??= BLANK.white;
   p.roughnessMap ??= BLANK.one;
   p.emissiveMap ??= BLANK.white;
@@ -281,6 +290,54 @@ export function lit(params = {}) {
   if (!(p.sheen > 0)) p.sheen = 1;
   return new THREE.MeshPhysicalMaterial(p);
 }
+// The normal map a height (bump) texture stands for, at about the relief bumpScale would give:
+// the canvas's luminance is the height, and the texture's wrap, repeat and filtering carry over.
+const normalCache = new WeakMap();
+export function bumpToNormal(bump, bumpScale = 1) {
+  if (normalCache.has(bump)) return normalCache.get(bump);
+  const src = bump.image;
+  const w = src.width;
+  const h = src.height;
+  const read = document.createElement('canvas');
+  read.width = w;
+  read.height = h;
+  const rctx = read.getContext('2d');
+  rctx.drawImage(src, 0, 0);
+  const d = rctx.getImageData(0, 0, w, h).data;
+  const height = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) height[i] = (d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114) / 255;
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  const strength = bumpScale * 1.6;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = height[y * w + ((x + 1) % w)] - height[y * w + ((x - 1 + w) % w)];
+      const dy = height[((y + 1) % h) * w + x] - height[((y - 1 + h) % h) * w + x];
+      const nx = -dx * strength;
+      const ny = dy * strength;
+      const l = Math.hypot(nx, ny, 1);
+      const i = (y * w + x) * 4;
+      img.data[i] = (nx / l * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (1 / l * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const texture = new THREE.CanvasTexture(out);
+  texture.wrapS = bump.wrapS;
+  texture.wrapT = bump.wrapT;
+  texture.repeat.copy(bump.repeat);
+  texture.offset.copy(bump.offset);
+  texture.anisotropy = bump.anisotropy;
+  texture.colorSpace = THREE.NoColorSpace;
+  normalCache.set(bump, texture);
+  return texture;
+}
+
 // Turns a material's clearcoat off (to the vanishing layer above, not to zero, which would be a
 // program of its own) or back on with the given roughness.
 export function clearcoat(material, on, roughness = 0.05) {

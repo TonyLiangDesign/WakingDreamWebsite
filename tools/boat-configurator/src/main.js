@@ -2,7 +2,7 @@ import {
   MODELS, LAYOUTS, HULL_COLOURS, TRIM_COLOURS, ENGINES, COWLINGS, OPTIONS, DEALERS, PRICE_MODES,
   engineAllowed, optionAllowed, normalise, resolve, lineItems, specText, shownTotal, nzd, toHash, fromHash,
 } from './config.js';
-import { reduceMotion, stage, mountBoat, resizeRenderer, renderFrame, snapshot, startLoop, compileScene, seaReady, loadSea, qaCompileHandles } from './scene.js';
+import { reduceMotion, stage, mountBoat, resizeRenderer, renderFrame, snapshot, startLoop, revealLit, seaReady, loadSea, qaCompileHandles } from './scene.js';
 import { qaHold, camera, controls, flyTo, startSpin, rigChanged, resizeCamera, stepCamera, specShot, rigOnScreen } from './camera.js';
 import './style.css';
 
@@ -399,10 +399,6 @@ document.fonts.ready.then(async () => {
   const qaView = params.get('qaView');
   const qaScroll = Number(params.get('qaScroll')) || 0;
   view(qaView || 'hero', true);
-  // The boat's shaders link off the main thread while the cover shows; the first frame then
-  // draws without a stall.
-  await compileScene(camera);
-  performance.mark('compiled');
   if (!qaView) {
     // Hold the framed hero shot while the loading cover fades, then ease into the turn.
     startSpin(1.2);
@@ -410,8 +406,13 @@ document.fonts.ready.then(async () => {
   }
   startLoop(camera, controls, stepCamera);
   started = true;
-  // Lift the cover once the first frames are drawn (shaders compiled), so it fades onto the boat.
-  requestAnimationFrame(() => requestAnimationFrame(() => { performance.mark('first-frames'); $('#loading').classList.add('done'); }));
+  // Lift the cover once the first frames are drawn, so it fades onto the boat (in clay), then
+  // link the real materials in the background and show them when they are ready (scene.js).
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    performance.mark('first-frames');
+    $('#loading').classList.add('done');
+    revealLit(camera);
+  }));
   // ?qaCam=px,py,pz,tx,ty,tz parks the camera (world metres) for close-up QA shots.
   const qaCam = (params.get('qaCam') || '').split(',').map(Number);
   if (qaCam.length === 6 && qaCam.every(Number.isFinite)) qaHold(qaCam.slice(0, 3), qaCam.slice(3));

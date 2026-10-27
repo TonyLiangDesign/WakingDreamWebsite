@@ -163,20 +163,86 @@ export function loadSea() {
   return seaLoading;
 }
 
-// Links every program the scene needs, in parallel and off the main thread where the browser
-// allows (KHR_parallel_shader_compile), so a first visit never freezes on shader compiles. The
-// desktop pipeline renders into a target, where materials carry no tone mapping, so they are
-// compiled that way.
-export async function compileScene(camera) {
+// Links every program `root` needs (the scene, or a probe of objects lit by it), in parallel and
+// off the main thread where the browser allows (KHR_parallel_shader_compile), so the frame that
+// first draws them never stalls on a compile. The desktop pipeline draws the scene into its HDR
+// target (linear, no tone mapping): compile with that target bound so the programs built are the
+// ones the frame uses.
+export async function compileScene(camera, root = scene) {
   if (qaNoAsync) return;
-  // The desktop pipeline draws the scene into its HDR target (linear, no tone mapping): compile
-  // with that target bound so the programs built are the ones the frame uses.
   if (post) renderer.setRenderTarget(post.target);
   try {
-    await renderer.compileAsync(scene, camera);
+    await renderer.compileAsync(root, camera, scene);
   } finally {
     renderer.setRenderTarget(null);
   }
+}
+
+// ---------- the boat appears as clay, then its materials ----------
+
+// The boat's own shader programs are the long compiles of a first visit. Until they are linked,
+// every part of the rig draws in clay (a matcap: one small program, no lights or shadows to
+// resolve), so the boat is on screen and turning within a second; revealLit() links the real
+// materials in the background on a probe of the rig's meshes and swaps them in once they are
+// ready. Later builds use the real materials straight away.
+function clayMatcap() {
+  const n = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = n;
+  const ctx = canvas.getContext('2d');
+  const g = ctx.createRadialGradient(n * 0.38, n * 0.34, n * 0.05, n * 0.5, n * 0.5, n * 0.52);
+  g.addColorStop(0, '#f2f0ec');
+  g.addColorStop(0.45, '#b9b6b0');
+  g.addColorStop(0.85, '#6c6a66');
+  g.addColorStop(1, '#3e3d3b');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, n, n);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+const clay = new THREE.MeshMatcapMaterial({ matcap: clayMatcap(), side: THREE.DoubleSide });
+let litReady = false;
+export const litShown = () => litReady;
+function clayOver(part) {
+  part.traverse((o) => {
+    if (o.isMesh && !o.userData.lit) {
+      o.userData.lit = o.material;
+      o.material = clay;
+    }
+  });
+}
+function restoreLit(part) {
+  part.traverse((o) => {
+    if (o.isMesh && o.userData.lit) {
+      o.material = o.userData.lit;
+      delete o.userData.lit;
+    }
+  });
+}
+export async function revealLit(camera) {
+  if (litReady) return;
+  const probe = new THREE.Scene();
+  const seen = new Set();
+  for (const part of [current.boat, current.trailer, current.cradle]) {
+    part.traverse((o) => {
+      if (!o.isMesh || !o.userData.lit) return;
+      const key = `${o.userData.lit.uuid}|${o.receiveShadow}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      // The probe mesh shares the geometry, so its attributes shape the program exactly as the
+      // part's will.
+      const mesh = new THREE.Mesh(o.geometry, o.userData.lit);
+      mesh.castShadow = o.castShadow;
+      mesh.receiveShadow = o.receiveShadow;
+      probe.add(mesh);
+    });
+  }
+  await compileScene(camera, probe);
+  litReady = true;
+  for (const part of [current.boat, current.trailer, current.cradle]) restoreLit(part);
+  collectOcclusionHidden();
+  performance.mark('lit-shown');
 }
 
 // vessel (bobs on the water) > offset (centres the hull) > boat; stands stay put.
@@ -211,6 +277,7 @@ export function mountBoat(build) {
   stand.add(current.trailer, current.cradle);
   offset.position.x = -current.lines.L / 2;
   stand.position.x = -current.lines.L / 2;
+  if (!litReady) for (const part of [current.boat, current.trailer, current.cradle]) clayOver(part);
   applyScene(build);
 }
 

@@ -278,7 +278,7 @@ function decalMaterial(name, colour) {
   if (!decalCache.has(key)) {
     const material = lit({
       map: nameTexture(name, colour), normalMap: vinylEdgeNormal(name), normalScale: new THREE.Vector2(1, 1),
-      roughness: 0.26, specularIntensity: 0.9, transparent: true, alphaTest: 0.02, depthWrite: false,
+      roughness: 0.26, specularIntensity: 0.9, transparent: true, depthWrite: false,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     });
     material.userData.shared = true;
