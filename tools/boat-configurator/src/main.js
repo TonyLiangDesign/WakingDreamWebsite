@@ -345,7 +345,8 @@ $('#reset').addEventListener('click', () => {
 });
 
 // The camera fits the boat to the part of the stage the overlays leave clear: below the title
-// row, above the view buttons (and the kiosk's attract button), with a margin at the sides.
+// row, above the view buttons (and the kiosk's attract button), with a margin at the sides that
+// leaves the boat some air.
 const GAP = 10;
 function stageInsets(box) {
   const reach = (sel, edge) => {
@@ -355,7 +356,7 @@ function stageInsets(box) {
     if (!r.width || !r.height) return 0;
     return edge === 'top' ? r.bottom - box.top + GAP : box.bottom - r.top + GAP;
   };
-  const side = Math.max(14, box.width * 0.03);
+  const side = Math.max(16, box.width * 0.045);
   return {
     width: box.width,
     height: box.height,
@@ -393,12 +394,14 @@ document.fonts.ready.then(() => {
   const qaScroll = Number(params.get('qaScroll')) || 0;
   view(qaView || 'hero', true);
   if (!qaView) {
-    startSpin();
+    // Hold the framed hero shot while the loading cover fades, then ease into the turn.
+    startSpin(1.2);
     showView(null);
   }
   startLoop(camera, controls, stepCamera);
   started = true;
-  requestAnimationFrame(() => $('#loading').classList.add('done'));
+  // Lift the cover once the first frames are drawn (shaders compiled), so it fades onto the boat.
+  requestAnimationFrame(() => requestAnimationFrame(() => $('#loading').classList.add('done')));
   // ?qaCam=px,py,pz,tx,ty,tz parks the camera (world metres) for close-up QA shots.
   const qaCam = (params.get('qaCam') || '').split(',').map(Number);
   if (qaCam.length === 6 && qaCam.every(Number.isFinite)) qaHold(qaCam.slice(0, 3), qaCam.slice(3));
