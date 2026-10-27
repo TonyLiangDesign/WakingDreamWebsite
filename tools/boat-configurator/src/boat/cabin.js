@@ -1,15 +1,20 @@
 import * as THREE from 'three';
-import { add, tube, rod, box, crossSection, spaced, v3, lerp, clamp01 } from './kit.js';
+import { add, tube, rod, box, crossSection, loft, sectionRing, spaced, v3, lerp, clamp01 } from './kit.js';
 import { DECK_Y, CAP } from './hull.js';
 import { nonslipMaterial } from './cockpit.js';
 import * as fit from './fittings.js';
 
 // Walkaround hardtop, built from flat alloy plate like the real thing: side walls with a little
 // tumblehome, a three-facet front (vertical face, sloped nose, raked windscreen) with swept corner
-// panels, double-skinned walls with real window openings (tinted glass in black sliding frames,
-// dark carpet liner inside, clipped to the hull plating), a rear bulkhead with a rolled-edge
-// opening, walkable side decks and a short deck ahead of the cabin, and a crowned roof with drip
-// edge, aft overhang on legs to the gunwale capping, grab rails, LED spotlight and VHF whip.
+// panels, double-skinned walls with real window openings (tinted glass set back in slim black
+// powder-coated sliding frames with rubber seals, tracks, meeting rails and latches), rolled aft
+// corners, a weld fillet to the side deck, a cabin-side grab rail and aft handholds, a rear
+// bulkhead with a rolled-edge opening, grab handles and a fire extinguisher, walkable side decks
+// and a short deck ahead of the cabin. Inside: grey carpet liner (clipped to the hull plating),
+// side pockets, vinyl headliner with overhead grab rails, and a V-berth in the cuddy behind
+// helm.js's bulkhead door. The roof is crowned with a slim rolled edge over a drip lip, an aft
+// overhang on legs to the gunwale capping with a headliner panel and LED cockpit lights, grab
+// rails, LED spotlight and VHF whip.
 // fittings.js owns the light and launcher geometry: navLight() side lights (red to port, green
 // to starboard), allRoundLight() and rocketLauncher() on the roof. Proportions follow DECK_Y and
 // the lines: headroom DECK_Y + 1.9 (+0.06 per metre of length), screen foot at DECK_Y + 1.02.
@@ -200,12 +205,12 @@ function linerTexture() {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, 256, 256);
   // Marine carpet liner: fine fleck, with a glued panel join every metre.
-  for (let i = 0; i < 5000; i++) {
-    const g = 175 + Math.random() * 80;
-    ctx.fillStyle = `rgba(${g},${g},${g},0.6)`;
+  for (let i = 0; i < 6000; i++) {
+    const g = 200 + Math.random() * 55;
+    ctx.fillStyle = `rgba(${g},${g},${g},0.45)`;
     ctx.fillRect(Math.random() * 256, Math.random() * 256, 1.4, 1.4);
   }
-  ctx.fillStyle = 'rgba(40,40,40,0.5)';
+  ctx.fillStyle = 'rgba(40,40,40,0.45)';
   ctx.fillRect(0, 0, 2, 256);
   ctx.fillRect(128, 0, 2, 256);
   const texture = new THREE.CanvasTexture(canvas);
@@ -220,41 +225,123 @@ export function partMaterials(m) {
   const pm = {
     // Tinted toughened glass, see-through from both sides.
     glass: new THREE.MeshPhysicalMaterial({ color: '#2a3a42', metalness: 0, roughness: 0.04, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 1.3 }),
-    // Black anodised window extrusions and screen frame.
-    frame: new THREE.MeshStandardMaterial({ color: '#16181a', metalness: 0.35, roughness: 0.42, side: THREE.DoubleSide }),
-    liner: new THREE.MeshStandardMaterial({ color: '#303337', map: linerTexture(), roughness: 0.95, side: THREE.DoubleSide }),
+    // Black powder-coated window extrusions and screen frame: satin, not gloss.
+    frame: new THREE.MeshStandardMaterial({ color: '#1c1e20', metalness: 0.3, roughness: 0.48, side: THREE.DoubleSide }),
+    // EPDM glazing seal, matte and a shade darker than the frame.
+    seal: new THREE.MeshStandardMaterial({ color: '#0d0e0f', roughness: 0.9, side: THREE.DoubleSide }),
+    // Mid-grey marine carpet lining the cabin walls.
+    liner: new THREE.MeshStandardMaterial({ color: '#767a7e', map: linerTexture(), roughness: 0.96, side: THREE.DoubleSide }),
+    // Light grey vinyl headliner panels.
+    headliner: new THREE.MeshStandardMaterial({ color: '#cfd0cc', roughness: 0.74, side: THREE.DoubleSide }),
+    // Upholstery to match helm.js's seats.
+    vinyl: new THREE.MeshStandardMaterial({ color: '#e6e3dc', roughness: 0.55 }),
+    piping: new THREE.MeshStandardMaterial({ color: '#8e9195', roughness: 0.5 }),
+    // LED light lens, switched off.
+    ledLens: new THREE.MeshStandardMaterial({ color: '#eef1f3', roughness: 0.28 }),
+    extinguisher: new THREE.MeshStandardMaterial({ color: '#b01a1c', roughness: 0.32 }),
     // Smoked acrylic for the console screen.
-    acrylic: new THREE.MeshPhysicalMaterial({ color: '#3b4a50', metalness: 0, roughness: 0.03, transparent: true, opacity: 0.38, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 1.4 }),
+    acrylic: new THREE.MeshPhysicalMaterial({ color: '#1f2b31', metalness: 0, roughness: 0.02, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 1.6, clearcoat: 1, clearcoatRoughness: 0.03 }),
     canvas: new THREE.MeshStandardMaterial({ roughness: 0.93, side: THREE.DoubleSide }),
     binding: new THREE.MeshStandardMaterial({ roughness: 0.85 }),
     white: new THREE.MeshStandardMaterial({ color: '#efeee9', roughness: 0.4 }),
+    // VHF whip (hardtop and T-top): its own material so the camera fit can skip it.
+    whip: new THREE.MeshStandardMaterial({ color: '#efeee9', roughness: 0.4 }),
   };
   for (const mat of Object.values(pm)) mat.userData.shared = true;
+  pm.whip.userData.noFit = true;
   cache.set(m, pm);
   return pm;
 }
 
-// Crowned slab with a fascia edge: the hardtop roof and the T-top canopy.
-// loop is the CCW plan outline [[x, z]...]; returns the top-surface height function.
-export function slab(group, loop, { yUnder, edge, crown, halfW, top, under, fascia = top, drip = 0 }) {
-  const topY = (x, z) => yUnder + edge + crown * (1 - (z / halfW) ** 2);
-  const loopT = offsetLoop(loop, -0.014);
-  add(group, ringCap(loopT, (x, z) => v3(x, topY(x, z), z)), top);
-  // Rounded-over top edge, then the fascia down to the drip lip.
-  add(group, strip(loop.map(([x, z]) => v3(x, topY(x, z) - 0.012, z)), loopT.map(([x, z]) => v3(x, topY(x, z), z)), true), fascia);
-  const yLow = yUnder - drip;
-  add(group, strip(loop.map(([x, z]) => v3(x, yLow, z)), loop.map(([x, z]) => v3(x, topY(x, z) - 0.012, z)), true), fascia);
-  const loopI = offsetLoop(loop, -0.012);
-  if (drip > 0) {
-    add(group, strip(loop.map(([x, z]) => v3(x, yLow, z)), loopI.map(([x, z]) => v3(x, yLow, z)), true), fascia);
-    add(group, strip(loopI.map(([x, z]) => v3(x, yLow, z)), loopI.map(([x, z]) => v3(x, yUnder, z)), true), fascia);
+// Distance from (x, z) to the nearest edge of a closed loop.
+function edgeDistance(loop, x, z) {
+  let d = Infinity;
+  for (let i = 0; i < loop.length; i++) {
+    const [ax, az] = loop[i];
+    const [bx, bz] = loop[(i + 1) % loop.length];
+    const dx = bx - ax;
+    const dz = bz - az;
+    const t = clamp01(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1));
+    d = Math.min(d, Math.hypot(x - ax - t * dx, z - az - t * dz));
   }
-  const shape = new THREE.Shape((drip > 0 ? loopI : loop).map(([x, z]) => new THREE.Vector2(x, z)));
+  return d;
+}
+
+// Closed band through offset copies of a plan loop: rows = [[offset, y(x, z)]...], smooth
+// shading across the rows (split into separate bands for a crisp crease).
+function loopBand(loop, rows) {
+  const n = loop.length;
+  const pos = [];
+  const uv = [];
+  const idx = [];
+  const runs = [0];
+  for (let i = 1; i < n; i++) runs.push(runs[i - 1] + Math.hypot(loop[i][0] - loop[i - 1][0], loop[i][1] - loop[i - 1][1]));
+  rows.forEach(([o, yf], r) => {
+    (o ? offsetLoop(loop, o) : loop).forEach(([x, z], i) => {
+      pos.push(x, yf(x, z), z);
+      uv.push(runs[i] * 0.5, r * 0.01);
+    });
+  });
+  for (let r = 0; r < rows.length - 1; r++) {
+    for (let i = 0; i < n; i++) {
+      const a = r * n + i;
+      const b = r * n + ((i + 1) % n);
+      idx.push(a, b, a + n, b, b + n, a + n);
+    }
+  }
+  return finishGeometry(pos, uv, idx);
+}
+
+// Roof-like slab: the hardtop roof and the T-top canopy. loop is the CCW plan outline [[x, z]...].
+// The flat underside is at yUnder; the edge is a constant-height lip (thick + drip, the drip
+// hanging below the underside) with the top edge rolled over at radius round; the top domes by
+// crown towards the middle, reaching it reach metres in from the edge, so the visible edge stays
+// thin all round. Returns the top-surface height function.
+export function slab(group, loop, { yUnder, thick, drip = 0, crown = 0, reach = 0.6, round = 0.01, lip = 0.004, top, under, fascia = top }) {
+  const eT = yUnder + thick;
+  const yLow = yUnder - drip;
+  const dome = (x, z) => { const u = Math.min(1, edgeDistance(loop, x, z) / reach); return crown * (1 - (1 - u) ** 2); };
+  const topY = (x, z) => eT + dome(x, z);
+  add(group, ringCap(offsetLoop(loop, -round), (x, z) => v3(x, topY(x, z), z), [1, 0.9, 0.74, 0.54, 0.32, 0.12]), top);
+  // Rolled top edge and fascia in one smooth band, a small eased corner at the drip.
+  const arc = [0, 0.33, 0.67, 1].map((k) => (k * Math.PI) / 2);
+  add(group, loopBand(loop, [
+    ...arc.map((t) => [-round + round * Math.sin(t), (x, z) => eT - round + round * Math.cos(t) + dome(x, z)]),
+    [0, () => yLow + 0.006],
+    [0, () => yLow + 0.002],
+    [-0.0015, () => yLow],
+  ]), fascia);
+  // Underside of the lip and its inner face up to the underside.
+  const lipRows = [[-0.0015, () => yLow], [-lip, () => yLow]];
+  if (drip > 0) lipRows.push([-lip, () => yUnder]);
+  add(group, loopBand(loop, lipRows), fascia);
+  const shape = new THREE.Shape(offsetLoop(loop, -lip).map(([x, z]) => new THREE.Vector2(x, z)));
   const g = new THREE.ShapeGeometry(shape);
   g.rotateX(Math.PI / 2);
   g.translate(0, yUnder, 0);
   add(group, g, under);
   return topY;
+}
+
+// Upholstered pad along x from xa to xb: rounded-box sections (superellipse, exponent p) of
+// height h standing on yb, half width hw (number or function of x) about zc(x); every end is
+// rolled over at radius R. Returns { geometry, welt } where welt is the closed run of the piping
+// seam: through the section angles welt[0] (on the +z side) and welt[1] (back along the other).
+export function pillow({ xa, xb, yb, h, hw, zc = () => 0, R = 0.03, p = 3, n = 24, steps = 8, welt = [0.55, Math.PI - 0.55] }) {
+  const xs = uniq([...spaced(xa, xa + R, 4), ...spaced(xa + R, xb - R, steps), ...spaced(xb - R, xb, 4)]);
+  const sizes = xs.map((x) => {
+    const e = Math.min(x - xa, xb - x);
+    const k = 1 - Math.sqrt(Math.max(0, 1 - (1 - Math.min(e / R, 1)) ** 2));
+    return { x, hh: Math.max(0.003, h / 2 - R * k), ww: Math.max(0.003, (typeof hw === 'function' ? hw(x) : hw) - R * k), z: zc(x) };
+  });
+  const rings = sizes.map(({ x, hh, ww, z }) => sectionRing(x, yb + h / 2, hh, ww, p, n).map((q) => q.setZ(q.z + z)));
+  const at = ({ x, hh, ww, z }, a) => {
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return v3(x, yb + h / 2 + hh * Math.sign(s) * Math.abs(s) ** (2 / p), z + ww * Math.sign(c) * Math.abs(c) ** (2 / p));
+  };
+  const seam = [...sizes.slice(1, -1).map((sz) => at(sz, welt[0])), ...sizes.slice(1, -1).reverse().map((sz) => at(sz, welt[1]))];
+  return { geometry: loft(rings), welt: seam };
 }
 
 // ---------- hardtop ----------
@@ -273,6 +360,7 @@ export function hardtop(group, lines, m, build) {
   const wallZ = (x, y) => hw(x) - TUMBLE * clamp01((y - sideY(x)) / (yR - sideY(x)));
   // Liner face, never outside the hull plating (the vee comes up under the walls forward).
   const wallIn = (x, y) => Math.min(wallZ(x, y) - WALL, lines.halfWidth(section(x / L), y) - 0.012);
+  const sy0 = sideY(x0);
 
   // Front profile on the corner line: low vertical face on the foredeck, 45 degree nose up to
   // the screen foot at dash height, raked screen. Plan facets: a flat centre panel within zc,
@@ -292,6 +380,14 @@ export function hardtop(group, lines, m, build) {
   const frontInRaw = (y) => solve(y, wallIn);
   const frontIn = (y) => frontInRaw(y) - (y > yB2 ? GLASS_SET : 0);
 
+  // Small fittings on the starboard cabin side, built as geometry so pair() can mirror them.
+  const wallN = (x, y) => v3(-(wallZ(x + 0.01, y) - wallZ(x - 0.01, y)) / 0.02, -(wallZ(x, y + 0.01) - wallZ(x, y - 0.01)) / 0.02, 1).normalize();
+  const onSide = (x, y, d) => v3(x, y, wallZ(x, y)).addScaledVector(wallN(x, y), d);
+  const along = (g, at, dir) => g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(v3(0, 1, 0), dir)).translate(at.x, at.y, at.z);
+  const rodG = (a, b, r, seg = 8) => along(new THREE.CylinderGeometry(r, r, a.distanceTo(b), seg), a.clone().lerp(b, 0.5), b.clone().sub(a).normalize());
+  const baseG = (x, y, r = 0.021, t = 0.006) => along(new THREE.CylinderGeometry(r, r * 1.08, t, 14), onSide(x, y, t / 2), wallN(x, y));
+  const lean = Math.atan(TUMBLE / (yR - sy0));
+
   // ----- side walls with window openings -----
   const yw0 = Math.max(yR - 0.76, Cy + 0.06);  // sills clear the helm dash top (C[1] + 0.035)
   const yh = yR - 0.13;
@@ -301,7 +397,7 @@ export function hardtop(group, lines, m, build) {
   const xmA = lerp(xs0, xe, 0.56);
   const winA = [[xs0, yw0], [xmA - 0.035, yw0], [xmA - 0.035, yh], [xs0, yh]];
   const winB = [[xmA + 0.035, yw0], [xe, yw0], [frontOut(yh) - P, yh], [xmA + 0.035, yh]];
-  const loops = [roundLoop(winA, 0.032, 4, 0.12), roundLoop(winB, 0.032, 4, 0.12)];
+  const loops = [roundLoop(winA, 0.022, 4, 0.12), roundLoop(winB, 0.022, 4, 0.12)];
   const near = (y, dir) => [0.00001, 0.004, 0.012, 0.024, 0.04, 0.06].map((d) => y + dir * d);
   const bandRows = uniq([...near(yw0, 1), ...spaced(yw0 + 0.09, yh - 0.09, 3), ...near(yh, -1)]);
   const cols = (a, b) => spaced(0, 1, Math.max(2, Math.ceil(Math.abs(b - a) / 0.14)));
@@ -311,8 +407,9 @@ export function hardtop(group, lines, m, build) {
   };
   const lowRows = (yFrom) => uniq([...spaced(yFrom, yw0, 6), sideY(x0), sideY(x1), yB2, ...(Cy < yw0 ? [Cy] : [])].filter((y) => y >= yFrom && y <= yw0));
   const topRows = spaced(yh - 0.00001, yR, 2);
+  const RC = 0.025;                              // radius of the aft cabin corners
   const skins = [
-    { zf: wallZ, front: frontOut, xa: x0, material: m.trim, rows: lowRows(sideY(x0) - 0.02) },
+    { zf: wallZ, front: frontOut, xa: x0 + RC, material: m.trim, rows: lowRows(sy0 - 0.02) },
     { zf: wallIn, front: frontIn, xa: x0 + WALL, material: pm.liner, rows: lowRows(DECK_Y) },
   ];
   for (const { zf, front, xa, material, rows } of skins) {
@@ -322,41 +419,87 @@ export function hardtop(group, lines, m, build) {
     piece(bandRows, (y) => spanAt(loops[1], y)[1], front, zf, material);
     piece(topRows, () => xa, front, zf, material);
   }
+  // Rolled aft corner between the side and the aft bulkhead.
+  pair(group, grid(spaced(0, Math.PI / 2, 5), spaced(sy0 - 0.02, yR, 6), (a, y) => {
+    const cz = wallZ(x0 + RC, y) - RC;
+    return [x0 + RC - RC * Math.cos(a), y, cz + RC * Math.sin(a)];
+  }), m.trim);
+  // Weld fillet where the cabin side meets the side deck.
+  const xFil = spaced(x0 + RC, Math.min(x1, frontOut(sideY(x1))) - 0.01, 24);
+  pair(group, strip(xFil.map((x) => v3(x, sideY(x) + 0.009, wallZ(x, sideY(x) + 0.009))), xFil.map((x) => v3(x, sideY(x) + 0.001, wallZ(x, sideY(x)) + 0.008))), m.trim);
 
-  // Window reveals, black sliding-window extrusions inside and out, glass in two tracks.
+  // Sliding windows: slim black powder-coated extrusions (26 mm face, 4 mm proud of the plate),
+  // a rubber glazing seal, glass set back in two tracks with sill and head channels, meeting
+  // rails and a latch; a narrower trim ring inside on the liner.
   const onWall = (loop, d) => loop.map(([x, y]) => v3(x, y, wallZ(x, y) + d));
-  const trackOut = -0.009;
-  const trackIn = -0.019;
+  const G1 = -0.011;              // outer (sliding) pane, behind the wall face
+  const G2 = -0.019;              // inner (fixed) pane
+  const FD = 0.004;               // flange face, proud of the plate
+  const FIN = -0.006;             // flange edge over the opening
+  const FOUT = 0.02;              // flange edge on the plate
+  const TR = 0.012;               // sill and head channel height inside the opening
+  const dI = -WALL - 0.004;       // inside trim ring face
   for (const [k, loop] of loops.entries()) {
-    const fin = offsetLoop(loop, -0.012);
-    const fout = offsetLoop(loop, 0.02);
-    pair(group, strip(onWall(loop, 0), onWall(loop, -WALL), true), pm.frame);
-    pair(group, strip(onWall(fin, 0.006), onWall(fout, 0.006), true), pm.frame);
-    pair(group, strip(onWall(fout, -0.002), onWall(fout, 0.006), true), pm.frame);
-    pair(group, strip(onWall(fin, 0.006), onWall(fin, trackOut), true), pm.frame);
-    pair(group, strip(onWall(fin, -WALL - 0.005), onWall(fout, -WALL - 0.005), true), pm.frame);
-    pair(group, strip(onWall(fout, -WALL + 0.002), onWall(fout, -WALL - 0.005), true), pm.frame);
-    pair(group, strip(onWall(fin, -WALL - 0.005), onWall(fin, trackIn), true), pm.frame);
+    const ring = (o, d) => onWall(o ? offsetLoop(loop, o) : loop, d);
+    const band = (o0, d0, o1, d1, material) => pair(group, strip(ring(o0, d0), ring(o1, d1), true), material);
+    band(0, 0, 0, -WALL, pm.frame);
+    band(FIN, FD, FOUT - 0.003, FD, pm.frame);
+    band(FOUT - 0.003, FD, FOUT, -0.001, pm.frame);
+    band(FIN, FD, FIN, G1 + 0.004, pm.frame);
+    band(FIN, G1 + 0.004, FIN - 0.005, G1 + 0.0005, pm.seal);
+    band(FIN + 0.002, dI, 0.016, dI, pm.frame);
+    band(0.016, dI, 0.016, -WALL + 0.001, pm.frame);
+    band(FIN + 0.002, dI, FIN + 0.002, G2 - 0.004, pm.frame);
+    band(FIN + 0.002, G2 - 0.004, FIN - 0.003, G2 - 0.0005, pm.seal);
+    // Sill and head channels the panes slide in.
+    for (const [ya, yb] of [[yw0 - 0.001, yw0 + TR], [yh + 0.001, yh - TR]]) {
+      const [a, b] = spanAt(loop, yb);
+      pair(group, grid(spaced(0, 1, 4), [ya, yb], (u, y) => { const x = lerp(a, b, u); return [x, y, wallZ(x, y) + G1 + 0.003]; }), pm.frame);
+      pair(group, grid(spaced(0, 1, 4), [G1 + 0.003, G2 - 0.003], (u, d) => { const x = lerp(a, b, u); return [x, yb, wallZ(x, yb) + d]; }), pm.frame);
+    }
     // Sliding split: the aft pane rides the outer track, the forward pane the inner one.
     const poly = k === 0 ? winA : winB;
     const xs = k === 0 ? (poly[0][0] + poly[1][0]) / 2 : lerp(poly[3][0], poly[2][0], 0.5);
-    const rows = bandRows.filter((y) => y > yw0 && y < yh);
+    const rows = bandRows.filter((y) => y >= yw0 + TR - 1e-6 && y <= yh - TR + 1e-6);
     const pane = (lo, hi, d) => pair(group, grid(spaced(0, 1, 3), rows, (u, y) => {
       const [a, b] = spanAt(loop, y);
       const x = lerp(Math.max(a, lo), Math.min(b, hi), u);
       return [x, y, wallZ(x, y) + d];
     }), pm.glass, { cast: false });
-    pane(-Infinity, xs + 0.012, trackOut);
-    pane(xs - 0.012, Infinity, trackIn);
+    pane(-Infinity, xs + 0.012, G1);
+    pane(xs - 0.012, Infinity, G2);
+    // Meeting rails, 18 mm wide.
     const bar = (xa, xb, d, dd) => {
-      const run = [yw0 + 0.004, yh - 0.004];
+      const run = [yw0 + TR, yh - TR];
       pair(group, grid([0, 1], run, (u, y) => { const x = lerp(xa, xb, u); return [x, y, wallZ(x, y) + d]; }), pm.frame);
       pair(group, grid([0, 1], run, (u, y) => [xb, y, wallZ(xb, y) + lerp(d, dd, u)]), pm.frame);
     };
-    bar(xs - 0.01, xs + 0.014, trackOut + 0.005, trackOut - 0.003);
-    bar(xs + 0.01, xs - 0.014, trackIn - 0.005, trackIn + 0.003);
-    // Latch on the sliding pane.
-    pair(group, grid([0, 1], [0.5 * (yw0 + yh) - 0.03, 0.5 * (yw0 + yh) + 0.03], (u, y) => { const x = xs - 0.03 + u * 0.016; return [x, y, wallZ(x, y) + trackIn - 0.008]; }), m.stainless);
+    bar(xs - 0.006, xs + 0.012, G1 + 0.004, G1 - 0.004);
+    bar(xs + 0.006, xs - 0.012, G2 - 0.004, G2 + 0.004);
+    // Latch on the inner meeting rail.
+    const ly = 0.5 * (yw0 + yh);
+    const latch = new THREE.BoxGeometry(0.01, 0.034, 0.007).rotateX(-lean).translate(xs - 0.004, ly, wallZ(xs, ly) + G2 - 0.0085);
+    pair(group, latch, m.stainless);
+  }
+
+  // Cabin-side grab rail under the windows and a vertical handhold at the aft corner, on
+  // stand-offs with base plates.
+  for (const [ya, yb, xa, xb, vertical] of [
+    [yw0 - 0.095, yw0 - 0.095, xs0 + 0.04, Math.min(xe - 0.12, x1 - 0.5), false],
+    [sy0 + 0.3, Math.min(yw0 + 0.3, yh - 0.06), x0 + 0.075, x0 + 0.075, true],
+  ]) {
+    const pt = (t, d) => onSide(lerp(xa, xb, t), lerp(ya, yb, t), d);
+    const len = Math.hypot(xb - xa, yb - ya);
+    const e = 0.03 / len;
+    const pts = [pt(0, 0.003), pt(0, 0.036), pt(e, 0.052), ...spaced(0.2, 0.8, 3).map((t) => pt(t, 0.052)), pt(1 - e, 0.052), pt(1, 0.036), pt(1, 0.003)];
+    pair(group, tube(pts, 0.0125, vertical ? 20 : 30, 8), m.stainless);
+    for (const t of [0, 1]) pair(group, baseG(lerp(xa, xb, t), lerp(ya, yb, t)), m.stainless);
+    if (!vertical) {
+      for (const t of [1 / 3, 2 / 3]) {
+        pair(group, rodG(pt(t, 0.003), pt(t, 0.05), 0.0095), m.stainless);
+        pair(group, baseG(lerp(xa, xb, t), ya), m.stainless);
+      }
+    }
   }
 
   // ----- front: face, nose and three-panel windscreen -----
@@ -375,15 +518,34 @@ export function hardtop(group, lines, m, build) {
   }, (p) => [p[2] * 0.5, p[1] * 0.5]), m.trim);
   frontSheet(spaced(yB2, Cy, 3), 0, 0, m.trim);
   frontSheet(spaced(Cy, yR, 4), WALL / 2, -GLASS_SET, pm.glass, { cast: false });
-  // Frame: sill, head, pillars and the two mullions over the facet folds.
-  frontSheet([Cy, Cy + 0.05], 0, 0.004, pm.frame);
-  frontSheet([yR - 0.055, yR], 0, 0.004, pm.frame);
-  const screenRows = spaced(Cy, yR, 4);
+  // Frame: slim extrusions (30-35 mm faces) 4 mm proud of the plate, with returns down to the
+  // glass and a rubber seal line along every glazed edge.
+  const FP = 0.004;
+  const gl = -GLASS_SET + 0.002;
+  const fpt = (y, z, d) => [X(y, z) + d, y, z];
+  const across = (u, y, inset = 0) => zAt(u, zOut(y) - inset);
+  for (const [ya, yb] of [[Cy, Cy + 0.035], [yR, yR - 0.03]]) {
+    const dir = Math.sign(yb - ya);
+    add(group, grid(fc, [ya, yb], (u, y) => fpt(y, across(u, y), FP)), pm.frame);
+    add(group, grid(fc, [FP, gl], (u, d) => fpt(yb, across(u, yb), d)), pm.frame);
+    add(group, grid(fc, [yb, yb + dir * 0.005], (u, y) => fpt(y, across(u, y, 0.03), gl - 0.001)), pm.seal);
+  }
+  const screenRows = spaced(Cy + 0.035, yR - 0.03, 4);
+  const allRows = spaced(Cy, yR, 4);
   for (const s of [1, -1]) {
-    add(group, grid([0, 1], screenRows, (u, y) => { const z = s * (zOut(y) - 0.045 * (1 - u)); return [X(y, z) + 0.004, y, z]; }), pm.frame);
-    add(group, grid([-0.022, 0, 0.022], screenRows, (u, y) => { const z = s * (zc + u); return [X(y, z) + 0.004, y, z]; }), pm.frame);
+    // Corner pillar.
+    const pz = (y, w) => s * (zOut(y) - w);
+    add(group, grid([0, 1], allRows, (u, y) => fpt(y, pz(y, 0.032 * (1 - u)), FP)), pm.frame);
+    add(group, grid([FP, gl], allRows, (d, y) => fpt(y, pz(y, 0.032), d)), pm.frame);
+    add(group, grid([0, 1], screenRows, (u, y) => fpt(y, pz(y, lerp(0.032, 0.037, u)), gl - 0.001)), pm.seal);
+    // Mullion over the facet fold.
+    add(group, grid([-0.016, 0, 0.016], allRows, (u, y) => fpt(y, s * (zc + u), FP)), pm.frame);
+    for (const e of [-1, 1]) {
+      add(group, grid([FP, gl], allRows, (d, y) => fpt(y, s * (zc + e * 0.016), d)), pm.frame);
+      add(group, grid([0, 1], screenRows, (u, y) => fpt(y, s * (zc + e * lerp(0.016, 0.021, u)), gl - 0.001)), pm.seal);
+    }
     // Pillar reveal, outer plate to liner.
-    add(group, strip(screenRows.map((y) => v3(frontOut(y), y, s * zOut(y))), screenRows.map((y) => v3(frontIn(y), y, s * wallIn(frontInRaw(y), y)))), pm.frame);
+    add(group, strip(allRows.map((y) => v3(frontOut(y), y, s * zOut(y))), allRows.map((y) => v3(frontIn(y), y, s * wallIn(frontInRaw(y), y)))), pm.frame);
   }
   // Wipers parked on the centre and starboard panels.
   const onScreen = (y, z, d = 0.012) => v3(X(y, z) + d, y, z);
@@ -406,9 +568,11 @@ export function hardtop(group, lines, m, build) {
   for (let k = 0; k <= 5; k++) { const a = (k / 5) * (Math.PI / 2); opening.push([zo - ro + ro * Math.cos(a), yo - ro + ro * Math.sin(a)]); }
   for (let k = 0; k <= 5; k++) { const a = Math.PI / 2 + (k / 5) * (Math.PI / 2); opening.push([-zo + ro + ro * Math.cos(a), yo - ro + ro * Math.sin(a)]); }
   opening.push([-zo, DECK_Y]);
-  const sideRun = (zf, s, up) => (up ? spaced(DECK_Y, yR, 8) : spaced(yR, DECK_Y, 8)).map((y) => [s * zf(x0, y), y]);
-  for (const [x, zf, material] of [[x0, wallZ, m.trim], [x0 + WALL, wallIn, pm.liner]]) {
-    const outline = [...sideRun(zf, -1, true), ...sideRun(zf, 1, false), ...opening];
+  // The outer skin stops short of the side by the corner radius above the side deck.
+  const runY = (inset) => (inset ? [[DECK_Y, 0], [sy0, 0], ...spaced(sy0, yR, 7).map((y) => [y, RC])] : spaced(DECK_Y, yR, 8).map((y) => [y, 0]));
+  const sideRun = (zf, s, up, inset) => { const r = runY(inset).map(([y, d]) => [s * (zf(x0, y) - d), y]); return up ? r : r.reverse(); };
+  for (const [x, zf, material, inset] of [[x0, wallZ, m.trim, true], [x0 + WALL, wallIn, pm.liner, false]]) {
+    const outline = [...sideRun(zf, -1, true, inset), ...sideRun(zf, 1, false, inset), ...opening];
     const g = new THREE.ShapeGeometry(new THREE.Shape(outline.map(([z, y]) => new THREE.Vector2(-z, y))));
     g.rotateY(Math.PI / 2);
     g.translate(x, 0, 0);
@@ -424,6 +588,29 @@ export function hardtop(group, lines, m, build) {
     const ya = sideY(x0) + 0.35;
     const yb = yR - 0.45;
     add(group, tube([v3(x0, ya, z), v3(x0 - 0.06, ya + 0.04, z), v3(x0 - 0.06, yb - 0.04, z), v3(x0, yb, z)], 0.0125, 24, 8), m.stainless);
+  }
+  // Fire extinguisher in its bracket on the port return, below the handle.
+  {
+    const z = -(zo + 0.088);
+    const yb = DECK_Y + 0.32;
+    const xc = x0 - 0.054;
+    const body = add(group, new THREE.CylinderGeometry(0.045, 0.045, 0.27, 14, 1, true), pm.extinguisher);
+    body.position.set(xc, yb + 0.135, z);
+    const shoulder = add(group, new THREE.SphereGeometry(0.045, 14, 4, 0, Math.PI * 2, 0, Math.PI / 2), pm.extinguisher);
+    shoulder.position.set(xc, yb + 0.27, z);
+    const valve = add(group, new THREE.CylinderGeometry(0.014, 0.016, 0.05, 10), pm.frame);
+    valve.position.set(xc, yb + 0.33, z);
+    box(group, pm.frame, [0.012, 0.012, 0.07], [xc + 0.004, yb + 0.358, z + 0.02]);
+    const gauge = add(group, new THREE.CylinderGeometry(0.011, 0.011, 0.008, 12), pm.white);
+    gauge.position.set(xc - 0.018, yb + 0.33, z);
+    gauge.rotation.z = Math.PI / 2;
+    const hose = add(group, tube([v3(xc, yb + 0.33, z - 0.014), v3(xc + 0.01, yb + 0.31, z - 0.05), v3(xc + 0.01, yb + 0.2, z - 0.052)], 0.006, 10, 6), pm.frame);
+    hose.castShadow = false;
+    box(group, pm.frame, [0.008, 0.2, 0.05], [x0 - 0.004, yb + 0.14, z]);
+    for (const y of [yb + 0.06, yb + 0.2]) {
+      const band2 = add(group, new THREE.CylinderGeometry(0.0475, 0.0475, 0.018, 14, 1, true), pm.frame);
+      band2.position.set(xc, y, z);
+    }
   }
 
   // ----- side decks, flush with the foredeck, with an end face at the cabin's aft end -----
@@ -454,7 +641,74 @@ export function hardtop(group, lines, m, build) {
     wedge.rotation.y = -Math.atan(s * slope);
   }
 
-  // ----- roof: crowned, drip edge, aft overhang on legs to the gunwales -----
+  // ----- cabin interior: carpet-lined, pockets, headliner and grab rails, V-berth forward -----
+  const xB = C0 - 0.07;           // helm.js's forward bulkhead
+  const xT = xB - 0.27;           // aft edge of helm.js's dash
+  // Carpeted side pockets on stand-off panels with a rubber edge trim, aft of the dash.
+  {
+    const xa = x0 + 0.3;
+    const xb = xT - 0.08;
+    const ya = DECK_Y + 0.52;
+    const yb = DECK_Y + 0.78;
+    const D = 0.05;
+    const xsP = spaced(xa, xb, Math.max(2, Math.ceil((xb - xa) / 0.25)));
+    const front = (x, y) => wallIn(x, y) - D;
+    pair(group, grid(xsP, [ya, yb], (x, y) => [x, y, front(x, y)]), pm.liner);
+    pair(group, grid(xsP, [0, 1], (x, u) => [x, ya, lerp(wallIn(x, ya), front(x, ya), u)]), pm.liner);
+    for (const x of [xa, xb]) pair(group, grid([0, 1], [ya, yb], (u, y) => [x, y, lerp(wallIn(x, y), front(x, y), u)]), pm.liner);
+    pair(group, tube(xsP.map((x) => v3(x, yb, front(x, yb) + 0.002)), 0.006, xsP.length * 2, 6), pm.seal);
+    for (const x of [xa, xb]) pair(group, tube([v3(x, ya, front(x, ya) + 0.002), v3(x, yb, front(x, yb) + 0.002)], 0.006, 2, 6), pm.seal);
+  }
+  // Headliner: light grey vinyl panels under the roof.
+  const xFt = frontInRaw(yR) - GLASS_SET - 0.004;
+  const sideIn = spaced(x0 + WALL, xFt, 10).map((x) => [x, wallIn(x, yR)]);
+  const headPoly = [
+    ...sideIn.map(([x, z]) => [x, -z]),
+    [X(yR, -zc) - GLASS_SET - 0.004, -zc], [X(yR, zc) - GLASS_SET - 0.004, zc],
+    ...sideIn.reverse(),
+  ];
+  const head = new THREE.ShapeGeometry(new THREE.Shape(headPoly.map(([x, z]) => new THREE.Vector2(x, z))));
+  head.rotateX(Math.PI / 2);
+  head.translate(0, yR - 0.004, 0);
+  add(group, head, pm.headliner);
+  // Overhead grab rails either side of the helm and passenger seats.
+  for (const s of [1, -1]) {
+    const z = s * (wallIn(x0 + 0.5, yR) - 0.22);
+    const xa = x0 + 0.25;
+    const xb = xT - 0.12;
+    const y0 = yR - 0.004;
+    const yl = y0 - 0.055;
+    add(group, tube([v3(xa, y0, z), v3(xa, yl + 0.02, z), v3(xa + 0.025, yl, z), ...spaced(xa + 0.1, xb - 0.1, 3).map((x) => v3(x, yl, z)), v3(xb - 0.025, yl, z), v3(xb, yl + 0.02, z), v3(xb, y0, z)], 0.0125, 24, 6), m.stainless);
+    for (const x of [xa, xb]) {
+      const fl = add(group, new THREE.CylinderGeometry(0.022, 0.024, 0.006, 12), m.stainless);
+      fl.position.set(x, y0 - 0.003, z);
+    }
+  }
+  // V-berth in the cuddy, through helm.js's doorway under the passenger dash: two upholstered
+  // cushions on a carpeted base, following the hull.
+  {
+    const xa = xB + 0.06;
+    const xb = Math.min(L * 0.84, x1 + 0.6);
+    const yb = DECK_Y + 0.31;
+    const zMax = (x) => lines.halfWidth(section(x / L), yb) - 0.04;
+    const zBase = (y) => lines.halfWidth(section(xa / L), y) - 0.03;
+    const ys = spaced(DECK_Y - 0.02, yb, 4);
+    add(group, crossSection([...ys.map((y) => [-zBase(y), y]), ...ys.slice().reverse().map((y) => [zBase(y), y])], xa), pm.liner);
+    const top = new THREE.ShapeGeometry(new THREE.Shape([
+      ...spaced(xa, xb, 8).map((x) => new THREE.Vector2(x, -zMax(x))),
+      ...spaced(xb, xa, 8).map((x) => new THREE.Vector2(x, zMax(x))),
+    ]));
+    top.rotateX(Math.PI / 2);
+    top.translate(0, yb - 0.004, 0);
+    add(group, top, pm.liner);
+    for (const s of [1, -1]) {
+      const { geometry, welt } = pillow({ xa, xb, yb, h: 0.1, hw: (x) => zMax(x) / 2 - 0.006, zc: (x) => (s * zMax(x)) / 2, R: 0.035, p: 2.8, n: 16, steps: 4 });
+      add(group, geometry, pm.vinyl);
+      add(group, tube(welt, 0.005, 40, 4, true), pm.piping, { cast: false });
+    }
+  }
+
+  // ----- roof: crowned, rolled edge over a slim drip lip, aft overhang on legs -----
   const roofAft = x0 - 0.5;
   const xLeg = roofAft + 0.09;
   const sl = section(xLeg / L);
@@ -467,24 +721,31 @@ export function hardtop(group, lines, m, build) {
     [roofAft, ra], [roofAft, -ra], [X(yR, rf) + OV, -rf], [X(yR, zc) + OV, -zc],
     [X(yR, zc) + OV, zc], [X(yR, rf) + OV, rf],
   ];
-  const roofLoop = roundLoop(roofPoly, [0.08, 0.08, 0.12, 0.35, 0.35, 0.12], 5, 0.1);
-  const roofY = slab(group, roofLoop, { yUnder: yR, edge: 0.05, crown: 0.02, halfW: ra, top: m.trim, under: m.trim, drip: 0.02 });
-  // Headliner inside the cabin.
-  const xFt = frontInRaw(yR) - GLASS_SET - 0.004;
-  const sideIn = spaced(x0 + WALL, xFt, 10).map((x) => [x, wallIn(x, yR)]);
-  const headPoly = [
-    ...sideIn.map(([x, z]) => [x, -z]),
-    [X(yR, -zc) - GLASS_SET - 0.004, -zc], [X(yR, zc) - GLASS_SET - 0.004, zc],
-    ...sideIn.reverse(),
-  ];
-  const head = new THREE.ShapeGeometry(new THREE.Shape(headPoly.map(([x, z]) => new THREE.Vector2(x, z))));
-  head.rotateX(Math.PI / 2);
-  head.translate(0, yR - 0.004, 0);
-  const huv = head.attributes.uv;
-  for (let i = 0; i < huv.count; i++) huv.setXY(i, head.attributes.position.getX(i) * 0.5, head.attributes.position.getZ(i) * 0.5);
-  add(group, head, pm.liner);
+  const roofLoop = roundLoop(roofPoly, [0.12, 0.12, 0.22, 0.35, 0.35, 0.22], 6, 0.1);
+  // 50 mm visible edge (30 mm skin over a 20 mm drip), crowned 30 mm in the middle.
+  const roofY = slab(group, roofLoop, { yUnder: yR, thick: 0.03, drip: 0.02, crown: 0.03, reach: 0.75, round: 0.014, top: m.trim, under: m.trim });
+  // Headliner panel under the aft overhang with two LED cockpit lights (lenses unlit).
+  {
+    const xa = roofAft + 0.15;
+    const xb = x0 - 0.035;
+    const zh = legTop - 0.09;
+    const loop = roundLoop([[xb, zh], [xa, zh], [xa, -zh], [xb, -zh]], 0.05, 4, 0.2);
+    const g = new THREE.ShapeGeometry(new THREE.Shape(loop.map(([x, z]) => new THREE.Vector2(x, z))));
+    g.rotateX(Math.PI / 2);
+    g.translate(0, yR - 0.008, 0);
+    add(group, g, pm.headliner);
+    add(group, strip(loop.map(([x, z]) => v3(x, yR - 0.008, z)), loop.map(([x, z]) => v3(x, yR, z)), true), pm.headliner);
+    for (const z of [-0.32, 0.32]) {
+      const x = (xa + xb) / 2;
+      const rim = add(group, new THREE.CylinderGeometry(0.042, 0.045, 0.01, 20), m.stainless);
+      rim.position.set(x, yR - 0.013, z);
+      const lens = add(group, new THREE.CircleGeometry(0.034, 20), pm.ledLens, { cast: false });
+      lens.position.set(x, yR - 0.0185, z);
+      lens.rotation.x = Math.PI / 2;
+    }
+  }
 
-  // Aft legs from base plates on the gunwale capping, flanged under the roof.
+  // Aft legs from base plates on the gunwale capping, flanged under the roof (one each side).
   for (const s of [1, -1]) {
     const foot = v3(xLeg, sl.ys + 0.008, s * footZ);
     const topP = v3(xLeg, yR - 0.02, s * legTop);
@@ -541,7 +802,7 @@ export function hardtop(group, lines, m, build) {
   const coil = add(group, new THREE.CylinderGeometry(0.014, 0.016, 0.12, 10), pm.frame);
   coil.position.set(xv, yv + 0.06, zv).addScaledVector(whipDir, 0.07);
   coil.quaternion.setFromUnitVectors(v3(0, 1, 0), whipDir);
-  const whip = add(group, new THREE.CylinderGeometry(0.004, 0.009, 1.35, 8), pm.white);
+  const whip = add(group, new THREE.CylinderGeometry(0.004, 0.009, 1.35, 8), pm.whip);
   whip.position.set(xv, yv + 0.06, zv).addScaledVector(whipDir, 0.13 + 0.675);
   whip.quaternion.setFromUnitVectors(v3(0, 1, 0), whipDir);
 
