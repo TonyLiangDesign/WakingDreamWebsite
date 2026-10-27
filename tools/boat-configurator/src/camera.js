@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { canvas, reduceMotion, renderer, scene, vessel, stand, mats, current, onWater, renderReflection, snapshot } from './scene.js';
+import { canvas, reduceMotion, renderer, scene, vessel, stand, mats, current, onWater, renderReflection, snapshot, renderFrame } from './scene.js';
 
 // Camera and orbit controls, the view presets and their fit to the visible rig, fly-to and
 // refit, the per-frame camera step, and the fixed 16:9 spec-sheet render.
@@ -495,9 +495,7 @@ export function specShot() {
   camera.position.copy(saved.pos);
   camera.lookAt(controls.target);
   camera.updateMatrixWorld();
-  renderer.shadowMap.needsUpdate = true;
-  if (onWater) renderReflection(camera, controls.target);
-  renderer.render(scene, camera);
+  renderFrame(camera);
   return out;
 }
 

@@ -170,7 +170,7 @@ function parts() {
   cache = {
     // Painted liner: a soft warm white with a satin sheen and a little orange peel.
     liner: new THREE.MeshPhysicalMaterial({
-      color: '#d3d5d0', roughness: 0.5, clearcoat: 0.35, clearcoatRoughness: 0.32,
+      color: '#d3d5d0', roughness: 0.6, clearcoat: 0.35, clearcoatRoughness: 0.32,
       normalMap: peel, normalScale: new THREE.Vector2(0.05, 0.05), side,
     }),
     // Gelcoat mouldings (bait tank, step, hatch lids): whiter and glossier than the paint.

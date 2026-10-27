@@ -1025,7 +1025,7 @@ function bulkhead(group, m, x, y0, y1, zAt, door) {
   const flange = doorShape(door, 0.04);
   flange.holes.push(doorShape(door, 0));
   add(group, standUp(new THREE.ExtrudeGeometry(flange, { depth: 0.06, bevelEnabled: false, curveSegments: 6 }), x - 0.016), m.trim);
-  add(group, standUp(new THREE.ShapeGeometry(doorShape(door, 0.002), 6), x + 0.04), m.dash, { cast: false });
+  // No curtain: the doorway stays open so the V-berth cushions read through it.
   const edge = [];
   for (const p of doorShape(door, 0.004).getPoints(6)) {
     const q = v3(x - 0.016, p.y, -p.x);
