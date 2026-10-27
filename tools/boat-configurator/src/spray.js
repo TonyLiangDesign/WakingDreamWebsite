@@ -257,9 +257,11 @@ function createSheet() {
 
 // Each particle is one quad, oriented on screen along its motion and stretched by the distance
 // it covers in EXPOSURE seconds: just off the chine the stretch is larger still, so the first
-// stretch of the flight reads as torn ligaments of the sheet. A drop narrower than a pixel keeps
-// a pixel's width and dims instead, so distant spray reads as a haze, not grit. Mist is a soft,
-// faint, slightly speckled puff carried aft on the apparent wind.
+// stretch of the flight reads as torn ligaments of the sheet. The streak is capped at a few
+// times the drop's width and tapers to soft points, so drops passing close to the camera read
+// as drops, not hard dashes, and those within a couple of metres of it fade out. A drop narrower
+// than a pixel keeps a pixel's width and dims instead, so distant spray reads as a haze, not
+// grit. Mist is a soft, faint, slightly speckled puff carried aft on the apparent wind.
 function createDrops(count) {
   const pos = new Float32Array(count * 3);
   const vel = new Float32Array(count * 3);
@@ -309,7 +311,7 @@ function createDrops(count) {
         float speed = length(d);
         vec2 dir = speed > 1e-4 ? d / speed : vec2(1.0, 0.0);
         float stretch = vMist > 0.5 ? 1.0 : kind == ${DROP}.0 ? 1.0 + 3.5 * (1.0 - smoothstep(0.0, 0.25, k)) : 1.0;
-        float run = min(0.5 * speed * ${EXPOSURE.toFixed(4)} * stretch, 0.08);
+        float run = min(0.5 * speed * ${EXPOSURE.toFixed(4)} * stretch, min(0.08, w * (2.5 + 1.2 * (stretch - 1.0))));
         mv.xy += dir * position.x * (run + w) + vec2(-dir.y, dir.x) * position.y * w;
         gl_Position = projectionMatrix * mv;
         vQuad = vec2(position.x * (run + w) / w, position.y);
@@ -319,6 +321,8 @@ function createDrops(count) {
         vAlpha = vMist > 0.5 ? 0.045 * sin(3.14159 * k) : (1.0 - k * k) * 0.9 * cover;
         // Drops fade into the water as they fall back; mist lies low over it.
         vAlpha *= smoothstep(-0.01, vMist > 0.5 ? 0.12 : 0.05, aPos.y);
+        // Nothing streaks across the lens.
+        vAlpha *= smoothstep(0.4, 1.9, depth);
         if (aInfo.y <= 0.0) vAlpha = 0.0;
         // Now and then a drop catches the sun.
         vGlint = vMist > 0.5 ? 0.0 : pow(max(sin(vSeed * 40.0 + k * 22.0), 0.0), 60.0) * cover;
@@ -334,18 +338,20 @@ function createDrops(count) {
       varying float vSeed;
       varying vec3 vWorld;
       void main() {
-        // Distance from the streak's centre line, in half-widths.
-        float dx = max(abs(vQuad.x) - vRun, 0.0);
-        float r = dx * dx + vQuad.y * vQuad.y;
-        if (r > 1.0) discard;
+        // Along the streak (0 at its middle, 1 at its tips) and across it, in half-widths.
+        float t = abs(vQuad.x) / (vRun + 1.0);
+        float r = t * t + vQuad.y * vQuad.y;
+        if (t > 1.0) discard;
         float a;
         if (vMist > 0.5) {
           // A cloud of fine droplets, not a smoke puff: soft, and grainy inside.
           float grain = vnoise(vQuad * 3.5 + vSeed * 31.0);
           a = exp(-r * 3.0) * (0.45 + 0.9 * grain);
         } else {
-          // Brighter at the head of the streak than its tail.
-          a = exp(-r * 2.6) * mix(0.55, 1.0, clamp(vQuad.x / (vRun + 1.0) * 0.5 + 0.5, 0.0, 1.0));
+          // A spindle that narrows to soft points at both tips, brighter at its head than its tail
+          // (a round drop when it barely moves).
+          float y = vQuad.y / max(sqrt(1.0 - t * t), 0.2);
+          a = exp(-y * y * 2.6) * (1.0 - t * t) * mix(0.6, 1.0, vQuad.x / (vRun + 1.0) * 0.5 + 0.5);
         }
         vec3 col = sprayColour(vWorld, 0.6 + 0.4 * vMist) + uSunColor * vGlint * 4.0;
         gl_FragColor = vec4(col, a * min(vAlpha + vGlint, 1.0));
