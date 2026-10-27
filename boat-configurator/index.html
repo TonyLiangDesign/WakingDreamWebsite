@@ -9,9 +9,9 @@
   <link rel="preload" href="/boat-configurator/assets/montserrat-normal-latin-Dk9Pm7OY.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/boat-configurator/assets/montserrat-italic-latin-5a10_2AF.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="icon" href="data:," />
-  <script type="module" crossorigin src="/boat-configurator/assets/index-DFy0X0Nz.js"></script>
+  <script type="module" crossorigin src="/boat-configurator/assets/index-cUVpdF_i.js"></script>
   <link rel="modulepreload" crossorigin href="/boat-configurator/assets/vendor-D97QPkc7.js">
-  <link rel="stylesheet" crossorigin href="/boat-configurator/assets/index-DWeVVidV.css">
+  <link rel="stylesheet" crossorigin href="/boat-configurator/assets/index-IQWjBT-t.css">
 </head>
 <body>
   <header class="topbar">
@@ -93,10 +93,14 @@
           <ul id="lines"></ul>
         </details>
         <div class="actions">
-          <button type="button" class="btn" id="copy-link">Copy link</button>
-          <button type="button" class="btn" id="save-image">Save image</button>
           <button type="button" class="btn" id="spec-sheet">Spec sheet</button>
+          <button type="button" class="btn" id="save-image">Save image</button>
+          <button type="button" class="btn" id="copy-link">Copy link</button>
         </div>
+        <figure class="share-qr">
+          <div class="share-qr-code" id="share-qr"></div>
+          <figcaption><b>Scan to open this build</b><span>The code follows your choices, so a phone lands on the same boat.</span></figcaption>
+        </figure>
         <div class="secondary-actions">
           <button type="button" class="link-button" id="reset">Start again</button>
           <button type="button" class="link-button" id="kiosk-toggle">Presentation mode</button>

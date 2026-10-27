@@ -4,6 +4,7 @@ import {
 } from './config.js';
 import { reduceMotion, stage, mountBoat, resizeRenderer, renderFrame, snapshot, startLoop, revealLit, seaReady, loadSea, qaCompileHandles } from './scene.js';
 import { qaHold, camera, controls, flyTo, startSpin, rigChanged, resizeCamera, stepCamera, specShot, rigOnScreen } from './camera.js';
+import qrcode from 'qrcode-generator';
 import './style.css';
 import './fonts.css';
 import { refreshDecalFonts } from './boat/hull.js';
@@ -82,6 +83,7 @@ function syncControls() {
   if (waitingForSea) loadSea().then(syncControls);
   $('#scene-note').hidden = !(build.scene === 'water' && build.options.includes('trailer'));
   history.replaceState(null, '', toHash(build));
+  renderShareQr();
 }
 
 form.addEventListener('change', (event) => {
@@ -144,6 +146,26 @@ function specRows(b) {
 
 const buildLink = () => `${location.origin}${location.pathname}${toHash({ ...build, kiosk: false })}`;
 
+// ---------- share QR code ----------
+
+// The build link as a QR code (medium error correction; the link is short, so the code stays
+// coarse enough to scan off a screen). The SVG scales to its box in CSS.
+function qrSvg(text, label) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({ cellSize: 1, margin: 0, scalable: true, alt: label });
+}
+
+// Redrawn by syncControls() whenever the build (and so the link) changes.
+let shownLink = '';
+function renderShareQr() {
+  const link = buildLink();
+  if (link === shownLink) return;
+  shownLink = link;
+  $('#share-qr').innerHTML = qrSvg(link, 'QR code for this build');
+}
+
 // ---------- printable spec sheet ----------
 
 const sheet = $('#sheet');
@@ -158,7 +180,7 @@ $('#spec-sheet').addEventListener('click', () => {
     <img src="${img}" alt="${esc(r.model.name)} ${esc(r.layout.name)} as configured" />
     <table class="sheet-spec">${specRows(build).map(([k, v]) => `<tr><th>${k}</th><td>${esc(v)}</td></tr>`).join('')}</table>
     ${price}
-    <p class="sheet-link">Open this build: <a href="${esc(buildLink())}">${esc(buildLink())}</a></p>
+    <div class="sheet-link"><div class="sheet-qr">${qrSvg(buildLink(), 'QR code for this build')}</div><p>Scan or open this build:<br /><a href="${esc(buildLink())}">${esc(buildLink())}</a></p></div>
     <p class="sheet-fine">Illustrative pricing in NZD incl. GST. A fictional boat by Waking Dream Technology for exploring 3D customisation.</p>`;
   sheet.hidden = false;
   document.body.classList.add('sheet-open');

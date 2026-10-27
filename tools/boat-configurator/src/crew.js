@@ -5,10 +5,10 @@ import { DECK_Y } from './boat/hull.js';
 
 // The skipper, shown on the water only: a rigged figure (Mixamo skeleton, 14k triangles, faces
 // +Z as authored) at the helm. A stored base pose sets the spine, head and gripping fingers; then
-// two-bone IK puts his left hand on the wheel rim at ten o'clock, his right on the throttle grip,
-// and his feet flat on the cockpit floor. At a centre console he stands clear between the
-// leaning post and the console, leaning a little into the wheel; under a hardtop he sits on the
-// starboard helm seat.
+// two-bone IK puts his left hand on the wheel rim at ten o'clock, his right on the throttle grip
+// (standing) or on the rim at two o'clock (seated), and his feet flat on the cockpit floor. At a
+// centre console he stands with his seat against the leaning post's bolster, a hand's breadth
+// behind the wheel; under a hardtop he sits on the starboard helm seat.
 //   loadSkipper()             -> Promise<skipper>, fetched once, the first time the water shows
 //   placeSkipper(s, helm)     poses s for the anchors helm.js returns (boat coordinates)
 //   skipper.root              add it to the frame the boat is built in
@@ -149,27 +149,31 @@ function wristFor(b, side, grip, fwdWorld) {
 
 // helm: { wheel: { rim, axis, radius }, throttle, seat | stand } in boat coordinates; root must
 // already be in its boat frame (the scene graph above it is used for world positions).
-//   Seated (hardtop): forward on the cushion and leaning into the wheel, so both hands reach.
-//   Standing (console): clear of the leaning post, leaning a little into the wheel.
-//   Left hand closed round the rim at ten o'clock, thumb up the rim; right hand closed over the
-//   throttle grip from behind, thumb inboard. Each hand is turned to its grip first, then the arm
-//   is solved so the fingers close round the bar rather than the wrist landing on it.
+//   Seated (hardtop): a little forward on the cushion, sitting up with a slight lean to the wheel.
+//   Standing (console): seat against the leaning post's bolster, nearly upright.
+//   Left hand closed round the rim at ten o'clock, thumb up the rim. Right hand: standing, closed
+//   over the throttle grip from behind, thumb inboard; seated, closed round the rim at two
+//   o'clock, the mirror of the left, since the throttle on the hardtop's dash top is above
+//   shoulder height from the helm seat and reaching it put the arm straight out at head height.
+//   Each hand is turned to its grip first, then the arm is solved so the fingers close round the
+//   bar rather than the wrist landing on it.
 export function placeSkipper(s, helm) {
   const { root, bones: b, pose } = s;
   for (const [name, q] of Object.entries(pose.bones)) b[name]?.quaternion.fromArray(q);
   b.Hips.position.fromArray(pose.hips);
   const { rim, axis, radius } = helm.wheel;
   const seated = !!helm.seat;
-  // The figure's own origin is under his hips. Standing, it sits a third of a metre forward of
-  // the leaning post's face, so his back and seat stay clear of the bolster.
-  if (seated) root.position.set(helm.seat.x + 0.42, DECK_Y, helm.seat.z);
-  else root.position.set(Math.max(rim.x - 0.4, helm.stand + 0.32), DECK_Y, rim.z + 0.04);
+  // The figure's own origin is under his hips. Standing, the hip joint is a tenth of a metre
+  // forward of the leaning post's face: the back of his seat rests on the bolster, and his belly
+  // stays a hand's breadth behind the bottom of the rim.
+  const hipX = seated ? helm.seat.x + 0.06 : helm.stand + 0.1;
+  root.position.set(hipX, DECK_Y, seated ? helm.seat.z : rim.z + 0.04);
   root.updateMatrixWorld(true);
 
-  // Seated: the hip joint 9 cm over the cushion, well forward on it, as a helmsman sits to
-  // reach the controls.
+  // Seated: the hip joint 9 cm over the cushion, a little forward of its middle, so his thighs
+  // lie along the cushion and his back sits clear of the backrest.
   if (seated) {
-    const hip = boatPoint(root, v3(helm.seat.x + 0.14, helm.seat.y + 0.09, helm.seat.z));
+    const hip = boatPoint(root, v3(hipX, helm.seat.y + 0.09, helm.seat.z));
     b.Hips.parent.updateMatrixWorld(true);
     b.Hips.position.copy(b.Hips.parent.worldToLocal(hip));
     b.Hips.updateMatrixWorld(true);
@@ -178,15 +182,16 @@ export function placeSkipper(s, helm) {
   const up = v3(0, 1, 0).transformDirection(root.parent.matrixWorld);
   const fwd = v3(1, 0, 0).transformDirection(root.parent.matrixWorld);
   const right = v3(0, 0, 1).transformDirection(root.parent.matrixWorld);
-  // He leans into the wheel from the waist: about 9 degrees standing, about 20 seated, and
+  // He leans into the wheel from the waist: about 6 degrees standing, about 15 seated, and
   // keeps his head up to look out over the bow.
-  const lean = seated ? -0.38 : -0.16;
+  const lean = seated ? -0.26 : -0.1;
   turn(b.Spine, right, lean);
   turn(b.Neck, right, -lean * 0.7);
-  // Feet: flat on the floor, ankles 8 cm up, a little aft of the hips when standing so his toes
-  // stay off the console's toe kick; knees towards the bow (and up, seated).
+  // Feet: flat on the floor, ankles 8 cm up. Standing, just ahead of the hips, with the heels
+  // clear of the leaning post's footrest bar; seated, far enough forward of the hips that the
+  // knees bend without the shins going vertical. Knees towards the bow (and up, seated).
   for (const [k, sgn] of [['Left', -1], ['Right', 1]]) {
-    const foot = boatPoint(root, v3(root.position.x + (seated ? 0.08 : -0.05), DECK_Y + 0.085, root.position.z + sgn * (seated ? 0.13 : 0.15)));
+    const foot = boatPoint(root, v3(hipX + (seated ? 0.37 : 0.04), DECK_Y + 0.085, root.position.z + sgn * (seated ? 0.13 : 0.15)));
     reach(b[`${k}UpLeg`], b[`${k}Leg`], b[`${k}Foot`], foot, fwd.clone().addScaledVector(right, sgn * 0.25));
   }
 
@@ -206,14 +211,25 @@ export function placeSkipper(s, helm) {
   reach(b.LeftArm, b.LeftForeArm, b.LeftHand, lWrist, up.clone().negate().addScaledVector(right, -0.6).addScaledVector(fwd, -0.3));
   orient(b.LeftHand, L.fwd, L.across, lFwd, lAcross);
 
-  // Right hand: over the throttle grip from behind, fingers closing over its front, thumb
-  // inboard; the grip's axis runs across the boat.
-  const overGrip = v3(1, -0.7, 0).normalize();
+  // Right hand. Standing: over the throttle grip from behind, fingers closing over its front,
+  // thumb inboard; the grip's axis runs across the boat. Seated: round the rim at two o'clock,
+  // the left hand's mirror (pinky down the rim, so the palm again faces the dash).
   const R = handAxes(b, 'Right');
-  const rFwd = overGrip.clone().transformDirection(root.parent.matrixWorld);
-  const rAcross = across.clone().transformDirection(root.parent.matrixWorld);
+  let rFwd;
+  let rAcross;
+  let rGrip;
+  if (seated) {
+    const twoDir = rimUp.clone().multiplyScalar(0.5).addScaledVector(across, 0.866);
+    rGrip = rim.clone().addScaledVector(twoDir, radius);
+    rFwd = twoDir.clone().transformDirection(root.parent.matrixWorld);
+    rAcross = rimUp.clone().multiplyScalar(-0.866).addScaledVector(across, 0.5).transformDirection(root.parent.matrixWorld);
+  } else {
+    rGrip = helm.throttle;
+    rFwd = v3(1, -0.7, 0).normalize().transformDirection(root.parent.matrixWorld);
+    rAcross = across.clone().transformDirection(root.parent.matrixWorld);
+  }
   orient(b.RightHand, R.fwd, R.across, rFwd, rAcross);
-  const rWrist = wristFor(b, 'Right', boatPoint(root, helm.throttle), rFwd);
+  const rWrist = wristFor(b, 'Right', boatPoint(root, rGrip), rFwd);
   reach(b.RightArm, b.RightForeArm, b.RightHand, rWrist, up.clone().negate().addScaledVector(right, 0.6).addScaledVector(fwd, -0.3));
   orient(b.RightHand, R.fwd, R.across, rFwd, rAcross);
 }

@@ -42,6 +42,18 @@
       ],
       "port": 8093,
       "autoPort": false
+    },
+    {
+      "name": "boat-uw",
+      "runtimeExecutable": "py",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8094",
+        "--directory",
+        "D:/bw/uw"
+      ],
+      "port": 8094
     }
   ]
 }

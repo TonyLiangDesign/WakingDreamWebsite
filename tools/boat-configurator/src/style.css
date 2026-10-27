@@ -213,6 +213,11 @@ summary { cursor: pointer; font-size: 0.72rem; color: var(--text-soft); }
 .btn:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
 .btn.btn-accent { border-color: var(--accent); color: var(--accent); }
 .btn.btn-accent:hover { background: var(--accent); color: var(--accent-ink); }
+.share-qr { display: flex; align-items: center; gap: 14px; margin: 14px 0 0; }
+.share-qr-code { flex: none; width: 88px; height: 88px; padding: 6px; background: #fff; }
+.share-qr-code svg { display: block; width: 100%; height: 100%; }
+.share-qr figcaption { display: grid; gap: 4px; font-size: 0.7rem; line-height: 1.45; color: var(--text-mute); }
+.share-qr figcaption b { font-weight: 500; font-size: 0.66rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-soft); }
 .link-button { margin-top: 12px; padding: 0; border: 0; background: none; font-size: 0.7rem; color: var(--text-mute); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .secondary-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; }
 .link-button:hover { color: var(--text); }
@@ -232,7 +237,10 @@ summary { cursor: pointer; font-size: 0.72rem; color: var(--text-soft); }
 .sheet-spec th { width: 34%; font-size: 0.64rem; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase; color: #5d6166; }
 .sheet-prices td:last-child { text-align: right; font-family: var(--mono); font-size: 0.72rem; white-space: nowrap; }
 .sheet-prices .sheet-total td { border-top: 2px solid #16181a; font-weight: 600; }
-.sheet-link { overflow-wrap: anywhere; font-size: 0.72rem; color: #5d6166; }
+.sheet-link { display: flex; align-items: center; gap: 14px; margin: 4px 0 0; overflow-wrap: anywhere; font-size: 0.72rem; color: #5d6166; }
+.sheet-link p { margin: 0; }
+.sheet-qr { flex: none; width: 84px; height: 84px; }
+.sheet-qr svg { display: block; width: 100%; height: 100%; }
 .sheet-link a { color: #2c6559; }
 .sheet-fine { margin: 14px 0 0; font-size: 0.66rem; color: #7a7d80; }
 @media (max-width: 600px) { .sheet-page { padding: 22px 18px; } }
@@ -244,6 +252,7 @@ summary { cursor: pointer; font-size: 0.72rem; color: var(--text-soft); }
   .sheet-bar { display: none; }
   .sheet-page { max-width: none; margin: 0; padding: 0; background: #fff; }
   .sheet-page img { -webkit-print-color-adjust: exact; print-color-adjust: exact; break-inside: avoid; }
+  .sheet-link { break-inside: avoid; }
   .sheet-page tr { break-inside: avoid; }
   .sheet-head { break-after: avoid; }
   @page { size: A4; margin: 14mm; }
@@ -256,6 +265,7 @@ summary { cursor: pointer; font-size: 0.72rem; color: var(--text-soft); }
 .kiosk .topbar .site-nav, .kiosk #kiosk-toggle, .kiosk #copy-link, .kiosk #save-image, .kiosk .stage-hint { display: none; }
 body.kiosk { --panel: 500px; font-size: 17px; }
 .kiosk .actions { grid-template-columns: 1fr; }
+.kiosk .share-qr-code { width: 120px; height: 120px; }
 .kiosk .btn { min-height: 54px; font-size: 0.74rem; }
 .kiosk .card { padding: 16px 16px 15px; }
 .kiosk .row { padding: 15px 16px; }
