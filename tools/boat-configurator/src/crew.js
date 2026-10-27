@@ -152,10 +152,12 @@ function wristFor(b, side, grip, fwdWorld) {
 //   footrest bar where there is one (the console's leaning post is too high for the floor),
 //   otherwise flat on the floor.
 //   Left hand closed round the rim at ten o'clock, thumb up the rim; right hand its mirror at
-//   two o'clock. (The throttle grip is left alone: on both layouts it sits at or above shoulder
-//   height, and reaching it put the arm straight out at head height.) Each hand is turned to
-//   its grip first, then the arm is solved so the fingers close round the bar rather than the
-//   wrist landing on it.
+//   two o'clock. Each hand drapes over the rim from behind, fingers forward over the tube, so
+//   the wrist carries on from the forearm instead of cocking up to point along the spoke. (The
+//   throttle grip is left alone: on both layouts it sits at or above shoulder height, and
+//   reaching it put the arm straight out at head height.) Each hand is turned to its grip
+//   first, then the arm is solved so the fingers close round the bar rather than the wrist
+//   landing on it.
 export function placeSkipper(s, helm) {
   const { root, bones: b, pose } = s;
   for (const [name, q] of Object.entries(pose.bones)) b[name]?.quaternion.fromArray(q);
@@ -164,7 +166,7 @@ export function placeSkipper(s, helm) {
   // The figure's own origin is under his hips. The hip joint sits 9 cm over the cushion, a
   // little forward of its middle, so his thighs lie along the cushion and his back sits clear
   // of the backrest.
-  const hipX = helm.seat.x + 0.06;
+  const hipX = helm.seat.x + 0.02;
   root.position.set(hipX, DECK_Y, helm.seat.z);
   root.updateMatrixWorld(true);
   const hip = boatPoint(root, v3(hipX, helm.seat.y + 0.09, helm.seat.z));
@@ -190,29 +192,42 @@ export function placeSkipper(s, helm) {
   }
 
   // Left hand: closed round the rim at ten o'clock from behind, as a helmsman holds a wheel:
-  // the hand lies in the wheel's plane pointing out along the spoke line, the palm's width runs
-  // down the rim (thumb up it), and the palm faces the dash, so the fingers wrap over the tube.
+  // the palm's width runs down the rim (thumb up it) so the fingers wrap round the tube, and
+  // the hand lies over the rim, fingers pointing forward past it and a little out along the
+  // spoke (60 degrees from the spoke line towards the wheel's axis), palm to the dash and the
+  // hub. So the wrist sits behind the rim in line with the forearm, drooping a little.
   const across = v3(0, 0, 1);
   const rimUp = v3().crossVectors(axis, across);
+  const overRim = (spoke) => spoke.clone().multiplyScalar(0.5).addScaledVector(axis, -0.866).normalize();
   const tenDir = rimUp.clone().multiplyScalar(0.5).addScaledVector(across, -0.866);
-  const onRim = rim.clone().addScaledVector(tenDir, radius);
   const alongRim = rimUp.clone().multiplyScalar(0.866).addScaledVector(across, 0.5).negate();
-  const L = handAxes(b, 'Left');
-  const lFwd = tenDir.clone().transformDirection(root.parent.matrixWorld);
-  const lAcross = alongRim.clone().transformDirection(root.parent.matrixWorld);
-  orient(b.LeftHand, L.fwd, L.across, lFwd, lAcross);
-  const lWrist = wristFor(b, 'Left', boatPoint(root, onRim), lFwd);
-  reach(b.LeftArm, b.LeftForeArm, b.LeftHand, lWrist, up.clone().negate().addScaledVector(right, -0.6).addScaledVector(fwd, -0.3));
-  orient(b.LeftHand, L.fwd, L.across, lFwd, lAcross);
-
   // Right hand: round the rim at two o'clock, the left hand's mirror (pinky down the rim, so the
   // palm again faces the dash).
-  const R = handAxes(b, 'Right');
   const twoDir = rimUp.clone().multiplyScalar(0.5).addScaledVector(across, 0.866);
-  const rFwd = twoDir.clone().transformDirection(root.parent.matrixWorld);
-  const rAcross = rimUp.clone().multiplyScalar(-0.866).addScaledVector(across, 0.5).transformDirection(root.parent.matrixWorld);
-  orient(b.RightHand, R.fwd, R.across, rFwd, rAcross);
-  const rWrist = wristFor(b, 'Right', boatPoint(root, rim.clone().addScaledVector(twoDir, radius)), rFwd);
-  reach(b.RightArm, b.RightForeArm, b.RightHand, rWrist, up.clone().negate().addScaledVector(right, 0.6).addScaledVector(fwd, -0.3));
-  orient(b.RightHand, R.fwd, R.across, rFwd, rAcross);
+  const alongRimR = rimUp.clone().multiplyScalar(-0.866).addScaledVector(across, 0.5);
+  // Elbows hang under the shoulders, a little out and aft.
+  for (const [side, sgn, spoke, along] of [['Left', -1, tenDir, alongRim], ['Right', 1, twoDir, alongRimR]]) {
+    const grip = boatPoint(root, rim.clone().addScaledVector(spoke, radius));
+    const acrossWorld = along.clone().transformDirection(root.parent.matrixWorld);
+    const pole = up.clone().negate().addScaledVector(right, sgn * 0.15).addScaledVector(fwd, -0.3);
+    let fwdWorld = overRim(spoke).transformDirection(root.parent.matrixWorld);
+    handOn(b, side, grip, fwdWorld, acrossWorld, pole);
+    // Then turn the hand most of the way towards the forearm the first solve gave, and solve
+    // again, so the wrist is nearly straight; the palm's width stays as near the rim as the
+    // forearm's angle allows (orient() squares it against the fingers).
+    b[`${side}Hand`].getWorldPosition(pa);
+    b[`${side}ForeArm`].getWorldPosition(pb);
+    fwdWorld = fwdWorld.lerp(pa.sub(pb).normalize(), 0.65).normalize();
+    handOn(b, side, grip, fwdWorld, acrossWorld, pole);
+  }
+}
+
+// Closes hand `side` round grip (world) pointing along fwdWorld with its width along
+// acrossWorld, and solves the arm (elbow towards pole) so the fingers close round the bar.
+function handOn(b, side, grip, fwdWorld, acrossWorld, pole) {
+  const H = handAxes(b, side);
+  const hand = b[`${side}Hand`];
+  orient(hand, H.fwd, H.across, fwdWorld, acrossWorld);
+  reach(b[`${side}Arm`], b[`${side}ForeArm`], hand, wristFor(b, side, grip, fwdWorld), pole);
+  orient(hand, H.fwd, H.across, fwdWorld, acrossWorld);
 }
