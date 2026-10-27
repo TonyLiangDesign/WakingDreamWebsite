@@ -652,7 +652,7 @@ export function tick(t) {
   whiteWater.mesh.material.uniforms.uFlow.value = u.uFlow.value;
   whiteWater.mesh.material.uniforms.uTime.value = u.uTime.value;
   current.boat.updateWorldMatrix(true, false);
-  if (run) spray.update(dt, t, current.boat, UNDERWAY.speed);
+  if (run) spray.update(dt, t, current.boat, UNDERWAY.speed, ride);
   for (let i = 0; i < 2; i++) {
     const p = current.leds[i];
     if (!p) { u.uGlow.value[i].w = 0; continue; }

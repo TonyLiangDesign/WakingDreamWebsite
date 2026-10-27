@@ -10,14 +10,12 @@ import { SUN_DIR, noiseChunk } from './water.js';
 //   droplets  CPU-simulated drops drawn as instanced quads stretched along their motion:
 //             ligaments near the chine breaking into drops further out, plus fine mist
 // The spray pulses with the chop: heavier when the bow drops, a burst after each slam.
-//   createSpray({ count })  -> { object, setRig(rig), warm(boat, speed), update(dt, t, boat, speed), setScale(px) }
+//   createSpray({ count })  -> { object, setRig(rig), warm(boat, speed), update(dt, t, boat, speed, ride), setScale(px) }
 //   setRig({ chine: [[x, y, z, weight]...], props: [[x, z]...] }) in boat coordinates.
 //   createWhiteWater({ detail })  the white water rolling out from under each chine onto the
 //                                 sea, so a profile view shows the hull pressing into it
 
 const GRAVITY = 9.8;
-// The slam in scene.js tick(): every SLAM_PERIOD seconds the hull drops for SLAM_PERIOD / 10.
-const SLAM_PERIOD = 4.7;
 // Seconds of motion smeared into each drop, as a camera's shutter would.
 const EXPOSURE = 1 / 140;
 // Drag towards the apparent wind (per second): the sheet, drops and mist are carried aft.
@@ -27,12 +25,12 @@ const DROP = 0;
 const MIST = 1;
 const PLUME = 2;
 
-// How hard the hull is working at time t (about 0.7 to 2.6): more spray as the bow pitches
-// down through the chop, and a burst just after each slam, as the hull lands.
-function surge(t) {
-  const s = t % SLAM_PERIOD;
-  const burst = Math.exp(-(((s - 0.32) / 0.16) ** 2));
-  const chop = 0.5 - 0.5 * Math.sin(t * 1.9 + 0.9);
+// How hard the hull is working (about 0.7 to 2.6), from the ride in scene.js tick(): more spray
+// as she drops into the chop, and a burst as she lands after a slam (landed: seconds since
+// ride.slam fell back to 0).
+function surge(ride, landed) {
+  const chop = THREE.MathUtils.clamp(-ride.vHeave / 0.25, 0, 1);
+  const burst = Math.exp(-(((landed - 0.15) / 0.16) ** 2));
   return 0.7 + 0.35 * chop + 1.6 * burst;
 }
 
@@ -75,11 +73,16 @@ export function createSpray({ count = 2400 } = {}) {
   object.add(sheet.mesh, drops.mesh);
   object.visible = false;
   let clock = 0;
+  let landed = 9;
+  let slamming = false;
   const boatMatrix = new THREE.Matrix4();
+  const still = { vHeave: 0 };
 
-  function run(dt, boat, speed) {
+  function run(dt, boat, speed, ride = still) {
     clock += dt;
-    const k = surge(clock);
+    landed = slamming && !(ride.slam > 0) ? 0 : landed + dt;
+    slamming = ride.slam > 0;
+    const k = surge(ride, landed);
     boatMatrix.copy(boat.matrixWorld);
     sheet.update(clock, k, boatMatrix);
     drops.step(dt, k, boatMatrix, speed);
@@ -97,11 +100,12 @@ export function createSpray({ count = 2400 } = {}) {
       clock -= 1;
       for (let i = 0; i < 40; i++) run(1 / 40, boat, speed);
     },
-    // t is the scene clock tick() runs on, so the bursts land with its slams.
-    update(dt, t, boat, speed) {
+    // t is the scene clock tick() runs on; ride is scene.js's ride (vHeave, slam), so the spray
+    // works with the hull.
+    update(dt, t, boat, speed, ride) {
       if (dt <= 0) return;
       clock = t - Math.min(dt, 1 / 20);
-      run(Math.min(dt, 1 / 20), boat, speed);
+      run(Math.min(dt, 1 / 20), boat, speed, ride);
     },
     // Pixels per metre at one metre from the camera: drawing-buffer height * P[1][1] / 2.
     setScale(scale) {
