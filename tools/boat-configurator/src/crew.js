@@ -6,8 +6,9 @@ import { DECK_Y } from './boat/hull.js';
 // The skipper, shown on the water only: a rigged figure (Mixamo skeleton, 14k triangles, faces
 // +Z as authored) at the helm. A stored base pose sets the spine, head and gripping fingers; then
 // two-bone IK puts his left hand on the wheel rim at ten o'clock, his right on the throttle grip,
-// and his feet flat on the cockpit floor. At a centre console he stands with his back to the
-// leaning post; under a hardtop he sits on the starboard helm seat.
+// and his feet flat on the cockpit floor. At a centre console he stands clear between the
+// leaning post and the console, leaning a little into the wheel; under a hardtop he sits on the
+// starboard helm seat.
 //   loadSkipper()             -> Promise<skipper>, fetched once, the first time the water shows
 //   placeSkipper(s, helm)     poses s for the anchors helm.js returns (boat coordinates)
 //   skipper.root              add it to the frame the boat is built in
@@ -63,6 +64,15 @@ function aim(bone, from, to) {
   bone.updateMatrixWorld(true);
 }
 
+// Turns bone by angle about a world axis.
+function turn(bone, worldAxis, angle) {
+  qa.setFromAxisAngle(worldAxis, angle);
+  bone.getWorldQuaternion(qb).premultiply(qa);
+  bone.parent.getWorldQuaternion(qa).invert();
+  bone.quaternion.copy(qa.multiply(qb));
+  bone.updateMatrixWorld(true);
+}
+
 // Upper / lower / end bones (shoulder-elbow-wrist or hip-knee-ankle) reach target (world), the
 // middle joint bending towards pole (a world direction). The end bone keeps its world rotation.
 function reach(upper, lower, end, target, pole) {
@@ -98,9 +108,10 @@ export function placeSkipper(s, helm) {
   b.Hips.position.fromArray(pose.hips);
   const { rim, axis, radius } = helm.wheel;
   const seated = !!helm.seat;
-  // Feet under the hips, a little apart; the figure's own origin is between his heels.
+  // The figure's own origin is under his hips. Standing, it sits a third of a metre forward of
+  // the leaning post's face, so his back and seat stay clear of the bolster.
   if (seated) root.position.set(helm.seat.x + 0.42, DECK_Y, helm.seat.z);
-  else root.position.set(Math.max(rim.x - 0.52, helm.stand + 0.2), DECK_Y, rim.z + 0.04);
+  else root.position.set(Math.max(rim.x - 0.4, helm.stand + 0.32), DECK_Y, rim.z + 0.04);
   root.updateMatrixWorld(true);
 
   // Seated: the hip joint 9 cm over the cushion, a hand's width aft of its centre.
@@ -114,9 +125,12 @@ export function placeSkipper(s, helm) {
   const up = v3(0, 1, 0).transformDirection(root.parent.matrixWorld);
   const fwd = v3(1, 0, 0).transformDirection(root.parent.matrixWorld);
   const right = v3(0, 0, 1).transformDirection(root.parent.matrixWorld);
-  // Feet: flat on the floor, ankles 8 cm up, knees towards the bow (and up, seated).
+  // Standing, he leans about 9 degrees into the wheel from the waist.
+  if (!seated) turn(b.Spine, right, -0.16);
+  // Feet: flat on the floor, ankles 8 cm up, a little aft of the hips when standing so his toes
+  // stay off the console's toe kick; knees towards the bow (and up, seated).
   for (const [k, sgn] of [['Left', -1], ['Right', 1]]) {
-    const foot = boatPoint(root, v3(root.position.x + (seated ? 0 : 0.02), DECK_Y + 0.085, root.position.z + sgn * (seated ? 0.13 : 0.15)));
+    const foot = boatPoint(root, v3(root.position.x + (seated ? 0 : -0.05), DECK_Y + 0.085, root.position.z + sgn * (seated ? 0.13 : 0.15)));
     reach(b[`${k}UpLeg`], b[`${k}Leg`], b[`${k}Foot`], foot, fwd.clone().addScaledVector(right, sgn * 0.25));
   }
   // Hands: left on the rim at ten o'clock, right on the throttle grip; wrists a palm short of the
