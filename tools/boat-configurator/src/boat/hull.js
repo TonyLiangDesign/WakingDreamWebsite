@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import { add, ribbon, loft, crossSection, spaced, v3, lerp, clamp01 } from './kit.js';
 
 // Hull lines and the shell: bottom plates, reverse chine, topsides with the knuckle and plate
-// seams, lifting strakes, weld beads, rubbing strake, keel and stem bar, gunwale capping, name decal.
+// seams (dished slightly between frames), lifting strakes, weld beads (painted over on painted
+// hulls), rubbing strake, keel and stem bar, gunwale capping, vinyl name decal.
 // hullLines(model) returns the lines object every other part queries:
 //   { L, B, halfBeam(t), keel(t), sheer(t), section(t), bottomZ(s, y), sideZ(s, y),
 //     halfWidth(s, y), stemX(y), chineT }
@@ -146,7 +147,78 @@ export function hullLines(model) {
   return { L, B, halfBeam, keel, sheer, section, bottomZ, sideZ, halfWidth, stemX, chineT };
 }
 
+// ---------- plate fairness ----------
+
+// Plate butts (fractions of L): bottom sheets join once, topside sheets twice, staggered between
+// the panels and clear of the name decal.
+const BUTT_BOTTOM = [0.46];
+const BUTT_LOWER = [0.36, 0.74];
+const BUTT_UPPER = [0.3, 0.8];
+
+// Oil-canning: welded plate draws in a little between the frames, so even a fair hull shows a
+// faint ripple in grazing reflections. Each topside panel dishes inward between frame stations
+// about 0.5 m apart (the butts sit on frames), deepest mid-panel, nothing at the knuckle, chine
+// or sheer welds, fading out in the bow where the flare stiffens the plate. 3.3-6 mm deep:
+// invisible face-on, a soft wobble in the reflected horizon at a glancing angle.
+const FRAME = 0.5;
+const DISH = 0.006;
+function frameStations(L, butts) {
+  const keys = [0, ...butts, 1];
+  const out = [];
+  for (let i = 0; i < keys.length - 1; i++) {
+    const n = Math.max(1, Math.round(((keys[i + 1] - keys[i]) * L) / FRAME));
+    for (let j = 0; j < n; j++) out.push(lerp(keys[i], keys[i + 1], j / n));
+  }
+  out.push(1);
+  return out;
+}
+const hash = (k) => { const v = Math.sin(k * 12.9898 + 4.1) * 43758.5453; return v - Math.floor(v); };
+
+// plateDish(lines, 'lower' | 'upper') returns (t, s) => inward depth in metres of that topside
+// panel at station t, s running 0 at the panel's lower edge to 1 at its upper edge.
+export function plateDish(lines, panel) {
+  const upper = panel === 'upper';
+  const frames = frameStations(lines.L, upper ? BUTT_UPPER : BUTT_LOWER);
+  const seed = upper ? 17 : 3;
+  let lastT = -1;
+  let top = 1;
+  return (t, s) => {
+    let k = 0;
+    while (k < frames.length - 2 && t > frames[k + 1]) k++;
+    const u = clamp01((t - frames[k]) / (frames[k + 1] - frames[k]));
+    const along = 0.65 * Math.sin(Math.PI * u) ** 2 + 0.35 * Math.sin(Math.PI * u);
+    const depth = DISH * (0.55 + 0.45 * hash(k + seed)) * (1 - smooth(0.8, 0.95, t));
+    // The upper panel is held flat under the rubbing strake (its lower edge is about 76 mm under
+    // the sheer), so the strake never stands off a dished plate.
+    if (upper && t !== lastT) {
+      const sec = lines.section(t);
+      top = clamp01((sec.ys - 0.085 - sec.yn) / (sec.ys - sec.yn || 1)) || 1;
+      lastT = t;
+    }
+    const v = clamp01(upper ? s / top : s);
+    const across = Math.sin(Math.PI * v) * (1 + 0.5 * (hash(k + seed + 40) - 0.5) * Math.cos(Math.PI * v));
+    return depth * along * across;
+  };
+}
+// The two edges [z, y] of a topside panel at a section.
+const panelEdges = {
+  lower: (s) => [[s.zp, s.yp], [s.zn, s.yn]],
+  upper: (s) => [[s.zn, s.yn], [s.hb, s.ys]],
+};
+
 // ---------- decal ----------
+
+const LETTER_FONT = (weight) => `italic ${weight} 118px Montserrat, "Helvetica Neue", Arial, sans-serif`;
+function drawName(ctx, name) {
+  ctx.font = LETTER_FONT(600);
+  ctx.textBaseline = 'middle';
+  const [series, number] = name.split(' ');
+  ctx.fillText(series.toUpperCase(), 20, 100);
+  const w = ctx.measureText(series.toUpperCase()).width;
+  ctx.font = LETTER_FONT(400);
+  ctx.fillText(number, 20 + w + 34, 100);
+  ctx.fillRect(20, 168, 980, 6);
+}
 
 export function nameTexture(name, colour) {
   const canvas = document.createElement('canvas');
@@ -154,25 +226,72 @@ export function nameTexture(name, colour) {
   canvas.height = 192;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = colour;
-  ctx.font = 'italic 600 118px Montserrat, "Helvetica Neue", Arial, sans-serif';
-  ctx.textBaseline = 'middle';
-  const [series, number] = name.split(' ');
-  ctx.fillText(series.toUpperCase(), 20, 100);
-  const w = ctx.measureText(series.toUpperCase()).width;
-  ctx.font = 'italic 400 118px Montserrat, "Helvetica Neue", Arial, sans-serif';
-  ctx.fillText(number, 20 + w + 34, 100);
-  ctx.fillRect(20, 168, 980, 6);
+  drawName(ctx, name);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   return texture;
 }
 
+// Cut vinyl has a cut edge: the lettering's alpha, softened by a pixel and turned into a normal
+// map, gives every letter a hairline bevel that catches the light along its rim.
+function vinylEdgeNormal(name) {
+  const w = 1024;
+  const h = 192;
+  const src = document.createElement('canvas');
+  src.width = w;
+  src.height = h;
+  const sctx = src.getContext('2d');
+  sctx.filter = 'blur(1px)';
+  sctx.fillStyle = '#fff';
+  drawName(sctx, name);
+  const a = sctx.getImageData(0, 0, w, h).data;
+  const out = sctx.createImageData(w, h);
+  const at = (x, y) => a[(Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))) * 4 + 3] / 255;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const nx = -(at(x + 1, y) - at(x - 1, y)) * 1.4;
+      const ny = (at(x, y + 1) - at(x, y - 1)) * 1.4;
+      const l = Math.hypot(nx, ny, 1);
+      const i = (y * w + x) * 4;
+      out.data[i] = (nx / l * 0.5 + 0.5) * 255;
+      out.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
+      out.data[i + 2] = (1 / l * 0.5 + 0.5) * 255;
+      out.data[i + 3] = 255;
+    }
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').putImageData(out, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.anisotropy = 8;
+  return texture;
+}
+
+// Gloss cast vinyl: satin-gloss against the mirror clearcoat around it, so a reflection running
+// across the name softens as it crosses the letters. One per name and colour, kept for the page.
+const decalCache = new Map();
+function decalMaterial(name, colour) {
+  const key = `${name}|${colour}`;
+  if (!decalCache.has(key)) {
+    const material = new THREE.MeshPhysicalMaterial({
+      map: nameTexture(name, colour), normalMap: vinylEdgeNormal(name), normalScale: new THREE.Vector2(1, 1),
+      roughness: 0.26, specularIntensity: 0.9, transparent: true, alphaTest: 0.02, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    });
+    material.userData.shared = true;
+    decalCache.set(key, material);
+  }
+  return decalCache.get(key);
+}
+
 // Name on the upper topsides panel, on a straight line raked with the sheer. The strip is laid
-// out by arc length on the plate, so the lettering keeps the canvas proportions.
+// out by arc length on the plate, so the lettering keeps the canvas proportions. It follows the
+// plate's dish and stands 0.6 mm proud of it: on the paint, not floating over it.
 export function nameDecal(group, lines, name, colour) {
-  const texture = nameTexture(name, colour);
-  const material = new THREE.MeshStandardMaterial({ map: texture, transparent: true, roughness: 0.35, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const material = decalMaterial(name, colour);
+  const dish = plateDish(lines, 'upper');
   const { L, section } = lines;
   const W = 0.2 * L;                     // decal length along the hull
   const H = W * (192 / 1024);            // keeps the canvas aspect
@@ -200,12 +319,19 @@ export function nameDecal(group, lines, name, colour) {
   // Each column climbs the plate in equal surface steps, so the flare does not stretch it.
   const columns = xs.map((x) => {
     const s = section(x / L);
+    const [a, b] = panelEdges.upper(s);
+    const [nz, ny] = segNormal(a, b);
+    const onPlate = (y) => {
+      const z = lines.sideZ(s, y);
+      const off = 0.0006 - dish(s.t, (y - s.yn) / (s.ys - s.yn || 1));
+      return [z + nz * off, y + ny * off];
+    };
     let y = y0(x);
-    const out = [[lines.sideZ(s, y), y]];
+    const out = [onPlate(y)];
     for (let j = 1; j <= rows; j++) {
       const dz = (lines.sideZ(s, y + 0.005) - lines.sideZ(s, y)) / 0.005;
       y += H / rows / Math.hypot(1, dz);
-      out.push([lines.sideZ(s, y), y]);
+      out.push(onPlate(y));
     }
     return out;
   });
@@ -214,7 +340,7 @@ export function nameDecal(group, lines, name, colour) {
     const uv = [];
     const index = [];
     columns.forEach((col, i) => col.forEach(([z, y], j) => {
-      position.push(xs[i], y, (z + 0.003) * side);
+      position.push(xs[i], y, z * side);
       const u = run[i] / run[n];
       uv.push(side > 0 ? u : 1 - u, j / rows);
     }));
@@ -293,17 +419,30 @@ export function topsideMaterial(m) {
 
 // Plate texture coordinates: fore-and-aft grain, stretched so the mill-finish streaks run
 // the length of a sheet; each sheet gets its own offset, like separate plates off the roll.
-function plateUV(g, mode, seed) {
+// Painted sheets take plain metres instead (the paint's orange peel is isotropic), offset by
+// metres per sheet so each samples its own shade of the paint's slow tone drift.
+function plateUV(g, mode, seed, painted = false) {
   const p = g.attributes.position;
   const uv = g.attributes.uv;
-  const du = (seed * 0.618) % 1;
-  const dv = (seed * 0.382) % 1;
+  const du = painted ? seed * 3.7 : (seed * 0.618) % 1;
+  const dv = painted ? seed * 2.3 : (seed * 0.382) % 1;
   for (let i = 0; i < p.count; i++) {
     const across = mode === 'bottom' ? Math.abs(p.getZ(i)) : p.getY(i);
-    uv.setXY(i, p.getX(i) * 0.12 + du, across * 0.7 + dv);
+    if (painted) uv.setXY(i, p.getX(i) + du, across + dv);
+    else uv.setXY(i, p.getX(i) * 0.12 + du, across * 0.7 + dv);
   }
   uv.needsUpdate = true;
   return g;
+}
+
+// Rubbing strake: extruded black PVC, semi-gloss, harder and shinier than moulded rubber.
+let pvc = null;
+function strakeMaterial() {
+  if (!pvc) {
+    pvc = new THREE.MeshPhysicalMaterial({ color: '#121314', roughness: 0.4, specularIntensity: 0.8, clearcoat: 0.3, clearcoatRoughness: 0.28 });
+    pvc.userData.shared = true;
+  }
+  return pvc;
 }
 
 // Strips that run out to a point (stem head, strake and capping ends) leave a few vertices on
@@ -336,6 +475,21 @@ function stations(t0, t1, n, breaks = []) {
   return [...new Set(all.map((t) => +t.toFixed(5)))].sort((a, b) => a - b);
 }
 
+// A bead is a loft of open arcs, so loft() cannot always tell outside from in. The beads use the
+// paint and plate materials, which are double-sided: wound inward, three.js would light the
+// visible face as a back face with its normals reversed. Check the crown of the middle ring
+// against the plate normal and rewind if needed.
+function faceOut(g, k, N, ring) {
+  const nrm = g.attributes.normal;
+  const j = ring * k + Math.floor(k / 2);
+  if (nrm.getX(j) * N.x + nrm.getY(j) * N.y + nrm.getZ(j) * N.z < 0) {
+    const idx = g.index.array;
+    for (let i = 0; i < idx.length; i += 3) [idx[i + 1], idx[i + 2]] = [idx[i + 2], idx[i + 1]];
+    g.index.needsUpdate = true;
+  }
+  return g;
+}
+
 // Weld bead: a low flat bead, 9 mm wide and 2 mm proud, swept along points on the plate with
 // the plate's outward normal at each, so it neither twists nor sinks into the plate. Its
 // normals lean only slightly off the plate's, so a bead a few pixels wide reads as a soft
@@ -354,12 +508,52 @@ function bead(group, pts, normals, material) {
       return p.clone().addScaledVector(N, h).addScaledVector(Bn, 0.0045 * Math.cos(a));
     });
   });
-  const g = loft(rings);
+  const g = faceOut(loft(rings), 8, frames[Math.floor(frames.length / 2)][0], Math.floor(frames.length / 2));
   const nrm = g.attributes.normal;
   frames.forEach(([N, Bn], i) => {
     for (let j = 0; j < 8; j++) {
       const n = N.clone().addScaledVector(Bn, 0.3 * Math.cos((j / 7) * Math.PI)).normalize();
       nrm.setXYZ(i * 8 + j, n.x, n.y, n.z);
+    }
+  });
+  add(group, g, material, { cast: false });
+}
+
+// Painted-over weld: once filled and sprayed, a weld reads as a soft ridge, 16 mm wide and about
+// 1 mm high, that rises out of the plate with no edge line and carries a highlight on its
+// flank. edges[i] = [nLo, nHi] are the plate normals either side (the lower and upper panel at
+// the knuckle, the same plate at a butt); the bead follows the fold between them, so across a
+// knuckle it also reads as the slightly rounded crease paint leaves there.
+function paintedBead(group, pts, normals, edges, material) {
+  const W = 0.008;
+  const H = 0.001;
+  const K = 11;
+  const T = new THREE.Vector3();
+  const frames = [];
+  const rings = pts.map((p, i) => {
+    T.subVectors(pts[Math.min(pts.length - 1, i + 1)], pts[Math.max(0, i - 1)]).normalize();
+    const N = normals[i].clone().addScaledVector(T, -normals[i].dot(T)).normalize();
+    const Bn = new THREE.Vector3().crossVectors(T, N).normalize();
+    const [nLo, nHi] = edges[i];
+    const loSign = Bn.y <= 0 ? 1 : -1;
+    const tanHalf = Math.tan(0.5 * Math.acos(Math.min(1, Math.max(-1, nLo.dot(nHi)))));
+    frames.push({ N, Bn, nLo, nHi, loSign });
+    return Array.from({ length: K }, (_, j) => {
+      const r = -1 + (2 * j) / (K - 1);
+      const bump = j === 0 || j === K - 1 ? -0.0006 : H * 0.5 * (1 + Math.cos(Math.PI * r));
+      return p.clone().addScaledVector(N, bump - Math.abs(r) * W * tanHalf).addScaledVector(Bn, r * W);
+    });
+  });
+  const mid = Math.floor(frames.length / 2);
+  const g = faceOut(loft(rings), K, frames[mid].N, mid);
+  const nrm = g.attributes.normal;
+  const n = new THREE.Vector3();
+  frames.forEach(({ N, Bn, nLo, nHi, loSign }, i) => {
+    for (let j = 0; j < K; j++) {
+      const r = -1 + (2 * j) / (K - 1);
+      n.copy(N).lerp(r * loSign > 0 ? nLo : nHi, Math.abs(r)).normalize();
+      n.addScaledVector(Bn, ((1.2 * H * Math.PI) / (2 * W)) * Math.sin(Math.PI * r)).normalize();
+      nrm.setXYZ(i * K + j, n.x, n.y, n.z);
     }
   });
   add(group, g, material, { cast: false });
@@ -383,18 +577,13 @@ export function hullShell(group, lines, m) {
   const { L, section, chineT } = lines;
   const sb = lines.B / 2.4;
   const paint = topsideMaterial(m);
+  const painted = paint !== plateAlloy();
   const alloy = plateAlloy();
 
-  // Plate butts: bottom sheets join once, topside sheets twice, staggered between the panels
-  // and clear of the name decal.
-  const BUTT_BOTTOM = [0.46];
-  const BUTT_LOWER = [0.36, 0.74];
-  const BUTT_UPPER = [0.3, 0.8];
-
   const skin = stations(0, 1, 110, [...BUTT_BOTTOM, ...BUTT_LOWER, ...BUTT_UPPER, chineT]).map(section);
-  const plates = (cuts, lo, hi) => {
+  const plates = (cuts, lo, hi, list = skin) => {
     const edges = [lo, ...cuts.filter((c) => c > lo && c < hi), hi];
-    return edges.slice(0, -1).map((a, i) => skin.filter((s) => s.t >= a - 1e-6 && s.t <= edges[i + 1] + 1e-6));
+    return edges.slice(0, -1).map((a, i) => list.filter((s) => s.t >= a - 1e-6 && s.t <= edges[i + 1] + 1e-6));
   };
 
   // Bottom plates up to where the chine meets the stem, then the turned-down chine shelf.
@@ -404,14 +593,21 @@ export function hullShell(group, lines, m) {
   add(group, plateUV(skinStrip(skin.filter((s) => s.t <= chineT + 1e-6).map((s) => ({ x: s.x, pts: [[s.zc, s.yc], [s.zf, s.yf]] }))), 'side', 7), alloy);
 
   // Topsides: bare alloy band under the paint line, then the lower and upper panels either
-  // side of the knuckle.
+  // side of the knuckle. The panels are finer than the rest of the skin (a station about every
+  // 65 mm aft, one on every frame, rows across the panel) so they can carry the dish between
+  // frames: each column of points is drawn in by plateDish, and the normals follow.
   add(group, plateUV(skinStrip(skin.filter((s) => s.t <= chineT + 1e-6).map((s) => ({ x: s.x, pts: [[s.zf, s.yf], [s.zp, s.yp]] }))), 'side', 11), alloy);
-  plates(BUTT_LOWER, 0, 1).forEach((run, i) => {
-    add(group, plateUV(skinStrip(run.map((s) => ({ x: s.x, pts: [[s.zp, s.yp], [s.zn, s.yn]] }))), 'side', 3 + i * 2), paint);
-  });
-  plates(BUTT_UPPER, 0, 1).forEach((run, i) => {
-    add(group, plateUV(skinStrip(run.map((s) => ({ x: s.x, pts: [[s.zn, s.yn], [s.hb, s.ys]] }))), 'side', 4 + i * 3), paint);
-  });
+  for (const [panel, butts, rows, seed, step] of [['lower', BUTT_LOWER, 4, 3, 2], ['upper', BUTT_UPPER, 6, 4, 3]]) {
+    const dish = plateDish(lines, panel);
+    const run = stations(0, 1, 150, [...butts, ...frameStations(L, butts)]).map(section);
+    plates(butts, 0, 1, run).forEach((r, i) => {
+      const strip = r.map((s) => {
+        const [a, b] = panelEdges[panel](s);
+        return { x: s.x, pts: spaced(0, 1, rows).map((f) => proud(a, b, f, -dish(s.t, f))) };
+      });
+      add(group, plateUV(skinStrip(strip), 'side', seed + i * step, painted), paint);
+    });
+  }
 
   // Lifting strakes: two a side, triangular, flat underneath with a near-plumb outer face.
   // They start 0.3 m forward of the transom and fade out before the chine reaches the stem.
@@ -437,20 +633,48 @@ export function hullShell(group, lines, m) {
     }
   };
   along(stations(0, chineT - 0.035, 70), (s) => [s.zf, s.yf], (s) => bisect(segNormal([s.zc, s.yc], [s.zf, s.yf]), segNormal([s.zf, s.yf], [s.zp, s.yp])), alloy);
-  along(stations(0, 0.985, 90), (s) => [s.zn, s.yn], (s) => bisect(segNormal([s.zp, s.yp], [s.zn, s.yn]), segNormal([s.zn, s.yn], [s.hb, s.ys])), paint);
-  const corners = (s) => ({ k: [0, s.yk], c: [s.zc, s.yc], p: [s.zp, s.yp], n: [s.zn, s.yn], h: [lines.sideZ(s, s.ys - 0.08), s.ys - 0.08] });
-  const butt = (t, from, to, mat) => {
+  // On painted hulls the knuckle and topside butts are filled and sprayed over: soft painted
+  // ridges. Bare hulls keep the as-welded beads.
+  // Bead normals are the plate's true 3D normal, including its fore-and-aft lean where the hull
+  // narrows into the bow (over 20 degrees at the forward butts). A section-plane normal there
+  // makes the bead mirror a different part of the room from the plate around it, which is what
+  // drew the welds as dark pencil lines.
+  const bottomEdges = (s) => [[0, s.yk], [s.zc, s.yc]];
+  const plateNormal = (edges, t, f, side) => {
+    const at = (tt) => { const s = section(clamp01(tt)); const [a, b] = edges(s); return v3(s.x, lerp(a[1], b[1], f), lerp(a[0], b[0], f)); };
+    const fore = at(t + 0.002).sub(at(t - 0.002));
+    const [a, b] = edges(section(t));
+    const n = new THREE.Vector3().crossVectors(fore, v3(0, b[1] - a[1], b[0] - a[0])).normalize();
+    if (n.z < 0) n.negate();
+    n.z *= side;
+    return n;
+  };
+  if (painted) {
+    for (const side of [1, -1]) {
+      const ss = stations(0, 0.985, 90).map(section);
+      const ends = ss.map((s) => [plateNormal(panelEdges.lower, s.t, 1, side), plateNormal(panelEdges.upper, s.t, 0, side)]);
+      paintedBead(group, ss.map((s) => v3(s.x, s.yn, side * s.zn)), ends.map(([lo, hi]) => lo.clone().add(hi).normalize()), ends, paint);
+    }
+  } else {
+    along(stations(0, 0.985, 90), (s) => [s.zn, s.yn], (s) => bisect(segNormal([s.zp, s.yp], [s.zn, s.yn]), segNormal([s.zn, s.yn], [s.hb, s.ys])), paint);
+  }
+  // The upper butts run up under the rubbing strake.
+  const corners = (s) => ({ k: [0, s.yk], c: [s.zc, s.yc], p: [s.zp, s.yp], n: [s.zn, s.yn], h: [lines.sideZ(s, s.ys - 0.062), s.ys - 0.062] });
+  const butt = (t, from, to, edges, mat, sprayed) => {
     const s = section(t);
     const pts = corners(s);
-    const [nz, ny] = segNormal(pts[from], pts[to]);
+    const [a, b] = edges(s);
+    const span = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
     for (const side of [1, -1]) {
-      const line = spaced(0.01, 0.99, 6).map((f) => proud(pts[from], pts[to], f, 0)).map(([z, y]) => v3(s.x, y, side * z));
-      bead(group, line, line.map(() => v3(0, ny, side * nz)), mat);
+      const line = spaced(0.01, 0.99, 8).map((f) => proud(pts[from], pts[to], f, 0)).map(([z, y]) => v3(s.x, y, side * z));
+      const nrm = line.map((p) => plateNormal(edges, t, clamp01(Math.hypot(Math.abs(p.z) - a[0], p.y - a[1]) / span), side));
+      if (sprayed) paintedBead(group, line, nrm, nrm.map((q) => [q, q]), mat);
+      else bead(group, line, nrm, mat);
     }
   };
-  for (const t of BUTT_LOWER) butt(t, 'p', 'n', paint);
-  for (const t of BUTT_UPPER) butt(t, 'n', 'h', paint);
-  for (const t of BUTT_BOTTOM) butt(t, 'k', 'c', alloy);
+  for (const t of BUTT_LOWER) butt(t, 'p', 'n', panelEdges.lower, paint, painted);
+  for (const t of BUTT_UPPER) butt(t, 'n', 'h', panelEdges.upper, paint, painted);
+  for (const t of BUTT_BOTTOM) butt(t, 'k', 'c', bottomEdges, alloy, false);
 
   // Keel bar and stem bar: one flat bar on edge, welded along the keel and up the stem.
   const headY = lines.sheer(1) - 0.075;
@@ -508,5 +732,5 @@ export function hullShell(group, lines, m) {
       return p.clone().addScaledVector(out, o).addScaledVector(nUp, h);
     });
   });
-  add(group, loft(strip), m.rubber);
+  add(group, loft(strip), strakeMaterial());
 }
