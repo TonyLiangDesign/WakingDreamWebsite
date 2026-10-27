@@ -416,28 +416,38 @@ function standMats() {
   if (MATS) return MATS;
   // Shared: disposeTree() must not free these when a boat is swapped out.
   const shared = (mat) => { mat.userData.shared = true; return mat; };
-  const sp = spangle();
-  const carpet = carpetTexture();
-  const tyre = tyreBump();
-  const galv = { color: '#a9aeb1', metalness: 0.85, roughness: 1, map: sp.map, roughnessMap: sp.rough };
-  MATS = {
-    galv: shared(lit(galv)),
-    rim: shared(lit({ ...galv, side: THREE.DoubleSide })),
+  const once = (create) => { let value; return () => (value ??= create()); };
+  const sp = once(spangle);
+  const tyre = once(tyreBump);
+  const galv = () => ({ color: '#a9aeb1', metalness: 0.85, roughness: 1, map: sp().map, roughnessMap: sp().rough });
+  const factories = {
+    galv: () => lit(galv()),
+    rim: () => lit({ ...galv(), side: THREE.DoubleSide }),
     // Zinc-plated wheel nuts, jack screws and hub caps: brighter and smoother than the dip.
-    zinc: shared(lit({ color: '#c4c8cb', metalness: 0.9, roughness: 0.32 })),
-    tread: shared(lit({ color: '#b0b5b7', metalness: 0.85, roughness: 0.5, map: sp.map, bumpMap: treadBump(), bumpScale: 2.5 })),
-    tyre: shared(lit({ color: '#141516', roughness: 1, roughnessMap: tyre.rough, bumpMap: tyre.bump, bumpScale: 2.2 })),
+    zinc: () => lit({ color: '#c4c8cb', metalness: 0.9, roughness: 0.32 }),
+    tread: () => lit({ color: '#b0b5b7', metalness: 0.85, roughness: 0.5, map: sp().map, bumpMap: treadBump(), bumpScale: 2.5 }),
+    tyre: () => lit({ color: '#141516', roughness: 1, roughnessMap: tyre().rough, bumpMap: tyre().bump, bumpScale: 2.2 }),
     // Display cradle: keel blocks in satin slate-grey paint.
-    paint: shared(lit({ color: '#56616b', roughness: 0.5 })),
-    carpet: shared(lit({ map: carpet, bumpMap: carpet, bumpScale: 1.2, roughness: 1 })),
-    plastic: shared(lit({ color: '#141516', roughness: 0.42 })),
-    redLens: shared(lit({ color: '#6a0f0c', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3a0705', '#ff3a2a'), emissiveIntensity: 0.9 })),
-    amberLens: shared(lit({ color: '#7a4a08', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3b2304', '#ffae2a'), emissiveIntensity: 0.6 })),
-    whiteLens: shared(lit({ color: '#e8eaec', roughness: 0.1, emissive: '#fff6e0', emissiveIntensity: 0.25 })),
-    plate: shared(lit({ map: plateTexture(), roughness: 0.35, metalness: 0.1 })),
-    strap: shared(lit({ color: '#3d5068', roughness: 0.85 })),
-    reservoir: shared(lit({ color: '#d8d3c4', roughness: 0.35 })),
+    paint: () => lit({ color: '#56616b', roughness: 0.5 }),
+    carpet: () => { const map = carpetTexture(); return lit({ map, bumpMap: map, bumpScale: 1.2, roughness: 1 }); },
+    plastic: () => lit({ color: '#141516', roughness: 0.42 }),
+    redLens: () => lit({ color: '#6a0f0c', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3a0705', '#ff3a2a'), emissiveIntensity: 0.9 }),
+    amberLens: () => lit({ color: '#7a4a08', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3b2304', '#ffae2a'), emissiveIntensity: 0.6 }),
+    whiteLens: () => lit({ color: '#e8eaec', roughness: 0.1, emissive: '#fff6e0', emissiveIntensity: 0.25 }),
+    plate: () => lit({ map: plateTexture(), roughness: 0.35, metalness: 0.1 }),
+    strap: () => lit({ color: '#3d5068', roughness: 0.85 }),
+    reservoir: () => lit({ color: '#d8d3c4', roughness: 0.35 }),
   };
+  // A cradle does not need tyre, carpet, lamp or number-plate textures. Build each
+  // material on first use, then retain it for subsequent configurations.
+  MATS = {};
+  for (const [name, create] of Object.entries(factories)) {
+    Object.defineProperty(MATS, name, { configurable: true, get() {
+      const value = shared(create());
+      Object.defineProperty(MATS, name, { value });
+      return value;
+    } });
+  }
   return MATS;
 }
 

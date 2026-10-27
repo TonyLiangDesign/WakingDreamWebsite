@@ -22,16 +22,30 @@ export function tube(points, radius, segments = 64, radial = 8, closed = false) 
   return new THREE.TubeGeometry(curve, segments, radius, radial, closed);
 }
 
+// These templates never change. Mesh transforms supply dimensions, and mergeStatic bakes
+// them into the final buffers. Keep templates on the CPU for the next configuration.
+const primitiveTemplates = new Set();
+const cylinders = new Map();
+const unitBox = new THREE.BoxGeometry();
+primitiveTemplates.add(unitBox);
+
 export function rod(group, a, b, radius, material, radialSegments = 10) {
   const dir = new THREE.Vector3().subVectors(b, a);
-  const mesh = add(group, new THREE.CylinderGeometry(radius, radius, dir.length(), radialSegments), material);
+  if (!cylinders.has(radialSegments)) {
+    const geometry = new THREE.CylinderGeometry(1, 1, 1, radialSegments);
+    cylinders.set(radialSegments, geometry);
+    primitiveTemplates.add(geometry);
+  }
+  const mesh = add(group, cylinders.get(radialSegments), material);
+  mesh.scale.set(radius, dir.length(), radius);
   mesh.position.copy(a).addScaledVector(dir, 0.5);
   mesh.quaternion.setFromUnitVectors(v3(0, 1, 0), dir.normalize());
   return mesh;
 }
 
 export function box(group, material, [sx, sy, sz], [x, y, z], opts) {
-  const mesh = add(group, new THREE.BoxGeometry(sx, sy, sz), material, opts);
+  const mesh = add(group, unitBox, material, opts);
+  mesh.scale.set(sx, sy, sz);
   mesh.position.set(x, y, z);
   return mesh;
 }
@@ -192,6 +206,6 @@ export function mergeStatic(group) {
     merged.setIndex(new THREE.BufferAttribute(index, 1));
     add(out, merged, material, { cast, receive });
   }
-  for (const geometry of disposed) geometry.dispose();
+  for (const geometry of disposed) if (!primitiveTemplates.has(geometry)) geometry.dispose();
   return out;
 }

@@ -87,3 +87,85 @@ marks without changing final rendering settings.
 
 Raw records and screenshots from this session are in the ignored local folder
 `_drafts/boat-speed-2026-10-28/`. Preserve these separately if sharing this report.
+
+## Second pass — 28 October 2026
+
+Compared against committed first-pass build `b9eb1d8`, not the original live site.
+The build in this working tree contains these additional changes:
+
+- Reuse unit cylinder/box geometry during construction; each mesh retains its own
+  dimensions and transform. Final meshes still have the same visible triangles.
+- Construct only the selected trailer or cradle. Stand materials and their textures
+  are lazy, so a cradle does not generate tyre, lamp or carpet textures.
+- Before the 400 camera support searches, use Three.js QuickHull to discard interior
+  samples. Keep the original directional searches; use the original full input for
+  degenerate point clouds. Avoid temporary arrays/vector clones in the extrema scan
+  and square roots in triangle classification.
+- Share a faster periodic-height-to-normal conversion with row offsets and bounded
+  square-root normalization. Texture dimensions and strength remain unchanged.
+- Cache the studio directional shadow map until the boat or scene changes. The water
+  scene still updates shadows every frame for boat motion.
+
+### Repeated no-HTTP-cache results
+
+Three alternating before/after runs per configuration, local no-store server, same
+browser and actual measured viewport **984 × 554 CSS pixels, DPR 1.3**, desktop AO
+pipeline. A distinct shader-source macro was used for each load; this does **not**
+guarantee that driver-level shader compilation caches are completely cold. These are
+local browser results, not production network timings. No network/CPU throttling.
+The initial warm-up/profile loads are excluded from both samples.
+
+| Configuration / metric | Before median | After median | Change |
+| --- | ---: | ---: | ---: |
+| Default 620 hardtop + trailer: build and camera | 347 ms | 313 ms | −10% |
+| Default: first frames | 521 ms | 474 ms | −9% |
+| Default: first lit frame | 621 ms | 578 ms | −7% |
+| Default: loading cover fully gone | 771 ms | 729 ms | −5% |
+| Same boat without trailer: build and camera | 332 ms | 256 ms | −23% |
+| Without trailer: first frames | 489 ms | 410 ms | −16% |
+| Without trailer: first lit frame | 596 ms | 507 ms | −15% |
+| Without trailer: loading cover fully gone | 730 ms | 659 ms | −10% |
+
+Raw first-frames / lit-frame / boat-visible values in milliseconds:
+
+- Default before: `557/682/790`, `521/621/771`, `521/618/770`.
+- Default after: `475/591/740`, `474/572/717`, `466/578/729`.
+- Cradle before: `484/596/730`, `489/589/710`, `506/606/738`.
+- Cradle after: `418/529/679`, `393/507/643`, `410/507/659`.
+
+Stored geometry buffers (including hidden support groups) fell from 7,156,944 bytes
+and 103 meshes to **6,654,136 bytes / 99 meshes** with the trailer (−7% bytes), or
+**5,843,628 bytes / 86 meshes** without it (−18% bytes). This removes unused support
+geometry; it does not decimate the visible boat. QuickHull adds about 3 KB gzip to the
+startup JavaScript, a small download tradeoff for less main-thread camera work.
+
+### Verification
+
+- `node --test test/*.test.js`: nine tests pass. Covers merged triangles/normals/UVs,
+  repeated shared primitive builds, byte-identical normal pixels against the old
+  formula (including a 2048 × 256 texture), and support projections against exhaustive
+  searches for volumetric, planar, collinear and coincident point clouds.
+- `npm run build`: passes. Existing vendor chunk size advisory remains.
+- Browser checks: 620 hardtop with/without trailer, 550 hardtop at an actual
+  300 × 649 CSS viewport (forward renderer), and 680 centre-console / T-top /
+  bare alloy / twin 200 / underwater lights on water, then back to studio.
+  No captured browser errors/warnings in those checks. Small viewport testing is
+  not a physical-phone performance measurement.
+- Shadow instrumentation: the new studio map updated once after reveal, remained
+  unchanged over thousands of renderer-pass calls, then updated once when the
+  trailer was removed. A water run continued updating (330 updates observed).
+  Renderer-pass calls include AO passes and are not display frame counts.
+- Before/after desktop screenshots show consistent framing and visible boat detail.
+  Raw measurements and screenshots are in the ignored local directory
+  `_drafts/boat-speed-round2-2026-10-28/`.
+
+### Remaining larger opportunities
+
+The default configuration still spends roughly 0.3 seconds building geometry and
+fitting the camera on this machine. The remaining large tasks are architectural:
+pre-generate frequently used immutable parts and textures (balancing download size
+against CPU time), and stop rebuilding the entire boat for changes that only affect
+appearance. A worker could keep the UI responsive during construction but would not
+by itself reduce total model-generation time; it also requires canvas/texture/font
+transfer handling. These are not included in this pass. Measure cold mobile hardware
+and production transfer times before choosing a larger asset-based implementation.

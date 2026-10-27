@@ -36,7 +36,14 @@ export function buildBoat(build, m) {
   const engines = outboards(boat, m, { hp: r.engine.hp, twin, podTop: deck.podTop, plateY: lines.keel(0) + 0.03 - deck.podTop, aft: deck.aft });
   const leds = build.options.includes('lights') ? underwaterLights(boat, m, deck) : [];
 
-  return { boat: mergeStatic(boat), lines, leds, engines, helm, trailer: trailer(lines, m), cradle: cradle(lines, m), podHalf: deck.podHalf };
+  // Keep both group slots for scene/camera code, but only build the selected support.
+  const onTrailer = build.options.includes('trailer');
+  return {
+    boat: mergeStatic(boat), lines, leds, engines, helm,
+    trailer: onTrailer ? trailer(lines, m) : new THREE.Group(),
+    cradle: onTrailer ? new THREE.Group() : cradle(lines, m),
+    podHalf: deck.podHalf,
+  };
 }
 
 export function disposeTree(object) {

@@ -46,8 +46,9 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
-// One shadow update per frame, shared by the reflection pass and the main render.
+// Shadows are static in the studio; afloat, one update is shared by both render passes.
 renderer.shadowMap.autoUpdate = false;
+let shadowDirty = true;
 // One clipping plane is always set: the surface in the reflection pass, and far below everything
 // otherwise. Programs are built per clipping-plane count, so this keeps the two passes on one
 // set of boat programs instead of compiling a second one for the reflection.
@@ -255,6 +256,7 @@ export async function revealLit(camera) {
   }
   await compileScene(camera, probe);
   litReady = true;
+  shadowDirty = true;
   for (const part of [current.boat, current.trailer, current.cradle]) restoreLit(part);
   collectOcclusionHidden();
   performance.mark('lit-shown');
@@ -388,6 +390,7 @@ function waterlineHalfWidth(lines, t, y) {
 }
 
 function applyScene(build) {
+  shadowDirty = true;
   // A water build before the sea has arrived shows in the studio and asks for the sea.
   onWater = build.scene === 'water' && !!sea;
   if (build.scene === 'water' && !sea) loadSea();
@@ -990,7 +993,7 @@ export function renderFrame(camera) {
   frameCamera = camera;
   if (paused) return;
   if (qaPerf) qaPerf.camera = camera;
-  renderer.shadowMap.needsUpdate = litReady;
+  renderer.shadowMap.needsUpdate = litReady && (onWater || shadowDirty);
   if (onWater) {
     sea.spray.setScale(renderer.getDrawingBufferSize(bufferSize).y * camera.projectionMatrix.elements[5] / 2);
     renderReflection(camera);
@@ -998,6 +1001,7 @@ export function renderFrame(camera) {
   }
   if (post) post.render(camera);
   else renderer.render(scene, camera);
+  if (litReady) shadowDirty = false;
   if (litReady && !litFrameDrawn) {
     performance.mark('lit-frame');
     litFrameDrawn = true;

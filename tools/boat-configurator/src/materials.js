@@ -1,3 +1,4 @@
+import { writeNormalPixels } from './normal-pixels.js';
 import * as THREE from 'three';
 import { HULL_COLOURS, TRIM_COLOURS, COWLINGS } from './config.js';
 
@@ -180,20 +181,7 @@ function normalMapFrom(h, n, strength, repeat) {
   canvas.width = canvas.height = n;
   const ctx = canvas.getContext('2d');
   const img = ctx.createImageData(n, n);
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      const dx = h[y * n + ((x + 1) % n)] - h[y * n + ((x - 1 + n) % n)];
-      const dy = h[((y + 1) % n) * n + x] - h[((y - 1 + n) % n) * n + x];
-      const nx = -dx * strength;
-      const ny = dy * strength;
-      const l = Math.hypot(nx, ny, 1);
-      const i = (y * n + x) * 4;
-      img.data[i] = (nx / l * 0.5 + 0.5) * 255;
-      img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
-      img.data[i + 2] = (1 / l * 0.5 + 0.5) * 255;
-      img.data[i + 3] = 255;
-    }
-  }
+  writeNormalPixels(h, n, n, strength, img.data);
   ctx.putImageData(img, 0, 0);
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
@@ -311,21 +299,7 @@ export function bumpToNormal(bump, bumpScale = 1) {
   out.height = h;
   const ctx = out.getContext('2d');
   const img = ctx.createImageData(w, h);
-  const strength = bumpScale * 1.6;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const dx = height[y * w + ((x + 1) % w)] - height[y * w + ((x - 1 + w) % w)];
-      const dy = height[((y + 1) % h) * w + x] - height[((y - 1 + h) % h) * w + x];
-      const nx = -dx * strength;
-      const ny = dy * strength;
-      const l = Math.hypot(nx, ny, 1);
-      const i = (y * w + x) * 4;
-      img.data[i] = (nx / l * 0.5 + 0.5) * 255;
-      img.data[i + 1] = (ny / l * 0.5 + 0.5) * 255;
-      img.data[i + 2] = (1 / l * 0.5 + 0.5) * 255;
-      img.data[i + 3] = 255;
-    }
-  }
+  writeNormalPixels(height, w, h, bumpScale * 1.6, img.data);
   ctx.putImageData(img, 0, 0);
   const texture = new THREE.CanvasTexture(out);
   texture.wrapS = bump.wrapS;

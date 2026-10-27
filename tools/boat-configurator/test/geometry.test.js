@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { mergeStatic } from '../src/boat/kit.js';
+import { mergeStatic, rod, box } from '../src/boat/kit.js';
 
 function triangles(geometry, attribute) {
   const a = geometry.getAttribute(attribute), result = [];
@@ -51,4 +51,32 @@ test('fills absent UVs and uses 32-bit indices beyond 65535 vertices', () => {
   assert.ok(merged.index.array instanceof Uint32Array);
   assert.equal(merged.index.getX(65537),65537);
   assert.ok(merged.attributes.uv.array.every(x => x === 0));
+});
+
+
+test('shared primitives preserve triangles across dimensions, rotations and repeated builds', () => {
+  const material = new THREE.MeshBasicMaterial();
+  for (const size of [0.01, 1, 7]) {
+    const actual = new THREE.Group(), expected = new THREE.Group();
+    const a = new THREE.Vector3(-1, 0.2, 3), b = new THREE.Vector3(size, 2, -0.5);
+    const dir = b.clone().sub(a), radius = size / 5;
+    rod(actual, a, b, radius, material, 12);
+    const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, dir.length(), 12), material);
+    cylinder.position.copy(a).addScaledVector(dir, 0.5);
+    cylinder.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+    cylinder.castShadow = cylinder.receiveShadow = true;
+    expected.add(cylinder);
+    box(actual, material, [size, 0.3, 2], [1, 2, 3]).rotation.y = 0.6;
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(size, 0.3, 2), material);
+    cube.position.set(1, 2, 3); cube.rotation.y = 0.6;
+    cube.castShadow = cube.receiveShadow = true;
+    expected.add(cube);
+    const got = mergeStatic(actual).children[0].geometry;
+    const want = mergeStatic(expected).children[0].geometry;
+    for (const key of ['position', 'normal', 'uv']) {
+      const left = triangles(got, key), right = triangles(want, key);
+      assert.equal(left.length, right.length);
+      for (let i = 0; i < left.length; i++) assert.ok(Math.abs(left[i] - right[i]) < 1e-6, `${key} ${i}`);
+    }
+  }
 });

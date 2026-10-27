@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { hullPoints } from './framing.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { canvas, reduceMotion, renderer, scene, vessel, stand, mats, current, onWater, renderReflection, snapshot, renderFrame } from './scene.js';
 
@@ -101,9 +102,9 @@ function rigPoints() {
       a.fromArray(world, i0 * 3);
       b.fromArray(world, i1 * 3);
       c.fromArray(world, i2 * 3);
-      const longest = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a));
-      if (longest < SOLID_LENGTH) continue;
-      if (ab.subVectors(b, a).cross(ac.subVectors(c, a)).length() / longest < SOLID_WIDTH) continue;
+      const longestSq = Math.max(a.distanceToSquared(b), b.distanceToSquared(c), c.distanceToSquared(a));
+      if (longestSq < SOLID_LENGTH * SOLID_LENGTH) continue;
+      if (ab.subVectors(b, a).cross(ac.subVectors(c, a)).lengthSq() < SOLID_WIDTH * SOLID_WIDTH * longestSq) continue;
       solid[i0] = solid[i1] = solid[i2] = 1;
       solidTop = Math.max(solidTop, a.y, b.y, c.y);
     }
@@ -117,7 +118,9 @@ function rigPoints() {
   const p = new THREE.Vector3();
   for (const { world, solid, boat } of parts) {
     const step = Math.max(1, Math.floor(solid.length / 400));
-    const ext = [];
+    const extrema = new Float64Array(14);
+    const indices = new Int32Array(14).fill(-1);
+    const keys = new Float64Array(7);
     for (let i = 0; i < solid.length; i++) {
       p.fromArray(world, i * 3);
       if (!solid[i] && p.y > thinCut) continue;
@@ -128,48 +131,27 @@ function rigPoints() {
         if (boat) boatPoints.push(points[points.length - 1]);
       }
       // Keep each part's extremes, diagonals included, so thin tips are never sampled away.
-      const keys = [p.x, p.y, p.z, p.x + p.z, p.x - p.z, p.x + p.y, p.y - p.x];
+      keys[0] = p.x; keys[1] = p.y; keys[2] = p.z;
+      keys[3] = p.x + p.z; keys[4] = p.x - p.z;
+      keys[5] = p.x + p.y; keys[6] = p.y - p.x;
       for (let k = 0; k < keys.length; k++) {
-        if (!ext[k * 2] || keys[k] < ext[k * 2].v) ext[k * 2] = { v: keys[k], p: p.clone() };
-        if (!ext[k * 2 + 1] || keys[k] > ext[k * 2 + 1].v) ext[k * 2 + 1] = { v: keys[k], p: p.clone() };
+        const lo = k * 2, hi = lo + 1;
+        if (indices[lo] < 0 || keys[k] < extrema[lo]) { extrema[lo] = keys[k]; indices[lo] = i; }
+        if (indices[hi] < 0 || keys[k] > extrema[hi]) { extrema[hi] = keys[k]; indices[hi] = i; }
       }
     }
-    for (const e of ext) if (e) points.push(e.p);
-    if (boat) for (const e of ext) if (e) boatPoints.push(e.p);
+    // Allocate only the final extrema, rather than clones at every intermediate best point.
+    for (const i of indices) if (i >= 0) {
+      const q = new THREE.Vector3().fromArray(world, i * 3);
+      if (onWater && q.y < 0) q.y = 0;
+      points.push(q);
+      if (boat) boatPoints.push(q);
+    }
   }
   const centre = box.getCenter(new THREE.Vector3());
   let radius = 0;
   for (const q of points) radius = Math.max(radius, q.distanceTo(centre));
   return (rig = { box, points: hullPoints(points, centre), boatPoints: hullPoints(boatPoints, centre), centre, radius, solidTop });
-}
-
-// Only the outermost points can touch a frame edge, so keep the support point for each of a few
-// hundred directions round the sphere: a near-convex-hull of a few hundred points instead of
-// thousands, which makes the fits cheap enough to redo for every heading on every resize.
-function hullPoints(points, centre) {
-  const keep = new Set();
-  // Pack once, rather than dereference Vector3 objects and subtract the centre in each of
-  // the 400 support searches. Float64 preserves the original projection precision.
-  const xyz = new Float64Array(points.length * 3);
-  for (let j = 0; j < points.length; j++) {
-    xyz[j * 3] = points[j].x - centre.x;
-    xyz[j * 3 + 1] = points[j].y - centre.y;
-    xyz[j * 3 + 2] = points[j].z - centre.z;
-  }
-  const n = 400;
-  for (let i = 0; i < n; i++) {
-    const y = 1 - (2 * (i + 0.5)) / n;
-    const r = Math.sqrt(1 - y * y);
-    const a = i * Math.PI * (3 - Math.sqrt(5));
-    const x = Math.cos(a) * r, z = Math.sin(a) * r;
-    let best = 0, bestV = -Infinity;
-    for (let j = 0; j < xyz.length; j += 3) {
-      const v = xyz[j] * x + xyz[j + 1] * y + xyz[j + 2] * z;
-      if (v > bestV) { bestV = v; best = j / 3; }
-    }
-    keep.add(best);
-  }
-  return [...keep].map((j) => points[j]);
 }
 
 function basis(dir) {
