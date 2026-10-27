@@ -1,11 +1,17 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { add, tube, rod, box, extrudeProfile, v3, lerp } from './kit.js';
 import { DECK_Y } from './hull.js';
+import { roundLoop, offsetLoop } from './cabin.js';
 
 // Helm gear for both layouts: moulded dash with a brow, flush MFD, engine display, VHF and switch
-// panel on a satin-black fascia, compass, wheel on a tilt column, throttle binnacle (dual for
-// twins), pedestal seats with swivel and slide, and the leaning post. Builds into the group given.
+// panel on a satin-black fascia, compass, polished wheel on a tilt column, throttle binnacle with
+// trim rockers (dual for twins), phone tray and cup holders, pedestal seats (brushed column,
+// footrest ring, swivel, slide, moulded shell, two-tone pleated vinyl with welts, flip-up
+// bolster) and the leaning post (moulded tackle module with recessed drawers, upholstered
+// bolster and backrest). Upholstery comes from pad(), one welded skin per cushion. Builds into
+// the group given.
 // hardtopHelm() receives the placement returned by cabin.js: { C, hw(x), wallZ(x, y) }.
 // consoleHelm() receives the placement returned by console.js: { cx0, top, Wc, yTop(x), postX }.
 // Both take an optional { twin } as a fourth argument for the dual binnacle.
@@ -195,23 +201,334 @@ function screenAtlas() {
   return t;
 }
 
+// Pleated vinyl insert: one channel per repeat across u, with a row of lock stitching just
+// inside each seam (u = 0 and 1) in a pale thread; v runs along the channel at 0.2 m per repeat.
+// The grey of the insert lives in the map, so the material colour stays white.
+function stitchTexture() {
+  const W = 64;
+  const H = 256;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#80868c';
+  g.fillRect(0, 0, W, H);
+  // A faint grain so the vinyl never reads as flat paint up close.
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 900; i++) {
+    const v = 110 + rnd() * 40;
+    g.fillStyle = `rgba(${v},${v + 4},${v + 8},0.25)`;
+    g.fillRect(rnd() * W, rnd() * H, 1 + rnd() * 2, 1);
+  }
+  // Seam shadow either side of the channel edge, then the stitch rows.
+  for (const x of [0, W - 3]) {
+    g.fillStyle = 'rgba(40,44,48,0.35)';
+    g.fillRect(x, 0, 3, H);
+  }
+  g.fillStyle = '#dedbd3';
+  for (const x of [5, W - 7]) for (let y = 0; y < H; y += 8) g.fillRect(x, y + 1, 2, 5);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  return t;
+}
+
 let cache = null;
-function helmMaterials() {
+function helmMaterials(m) {
   if (cache) return cache;
+  // Brushed pedestal alloy: the shared brushed map, turned to run along the column.
+  const brushed = m.galv.roughnessMap ? m.galv.roughnessMap.clone() : null;
+  if (brushed) {
+    brushed.center.set(0.5, 0.5);
+    brushed.rotation = Math.PI / 2;
+    brushed.repeat.set(1, 4);
+    brushed.needsUpdate = true;
+  }
   cache = {
     // Dark glass: the page shows through the emissive map, the clearcoat gives the reflections.
     screen: new THREE.MeshPhysicalMaterial({
       color: '#030507', roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04,
-      emissive: '#ffffff', emissiveMap: screenAtlas(), emissiveIntensity: 0.6,
+      emissive: '#ffffff', emissiveMap: screenAtlas(), emissiveIntensity: 1.05,
     }),
     fascia: new THREE.MeshStandardMaterial({ color: '#1a1c1e', roughness: 0.82 }),
+    // Anti-glare dash top: a charcoal, dead-flat finish, a step lighter than the fascia.
+    antiglare: new THREE.MeshStandardMaterial({ color: '#2a2d30', roughness: 0.95 }),
     bezel: new THREE.MeshStandardMaterial({ color: '#0b0c0d', roughness: 0.3 }),
-    vinyl: new THREE.MeshStandardMaterial({ color: '#e6e3dc', roughness: 0.52 }),
-    piping: new THREE.MeshStandardMaterial({ color: '#8e9195', roughness: 0.5 }),
-    shell: new THREE.MeshStandardMaterial({ color: '#8a8e92', roughness: 0.42 }),
+    // Marine vinyl: off-white body and bolsters, grey pleated inserts, charcoal welt piping.
+    vinyl: new THREE.MeshPhysicalMaterial({ color: '#ebe8e1', roughness: 0.55, clearcoat: 0.25, clearcoatRoughness: 0.45 }),
+    insert: new THREE.MeshPhysicalMaterial({ color: '#ffffff', map: stitchTexture(), roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.5 }),
+    piping: new THREE.MeshStandardMaterial({ color: '#34383c', roughness: 0.5 }),
+    // Moulded seat shells: light grey satin polymer.
+    shell: new THREE.MeshStandardMaterial({ color: '#a4a9ad', roughness: 0.38 }),
+    // Satin black for the throttle body, swivel housing and seat hardware.
+    satin: new THREE.MeshStandardMaterial({ color: '#1d1f21', roughness: 0.4, metalness: 0.2 }),
+    // Brushed anodised alloy for the pedestal columns.
+    post: new THREE.MeshStandardMaterial({ color: '#cfd3d6', metalness: 0.75, roughness: 0.38, roughnessMap: brushed }),
+    // Polished stainless for the wheel, cup-holder rims and grab handles: brighter in the environment.
+    polished: new THREE.MeshStandardMaterial({ color: '#f1f3f5', metalness: 1, roughness: 0.07, envMapIntensity: 1.6 }),
+    // Shadow gap behind the leaning post's drawer faces.
+    recess: new THREE.MeshStandardMaterial({ color: '#1b1d1f', roughness: 0.85 }),
     led: new THREE.MeshStandardMaterial({ color: '#0d2a14', emissive: '#3ddc6a', emissiveIntensity: 0.9 }),
   };
+  for (const mat of Object.values(cache)) mat.userData.shared = true;
   return cache;
+}
+
+// ---------- upholstery ----------
+
+const clampTo = (u, lo, hi) => Math.min(hi, Math.max(lo, u));
+const smooth01 = (u) => { const t = clampTo(u, 0, 1); return t * t * (3 - 2 * t); };
+const bump = (u) => (Math.abs(u) >= 1 ? 0 : (1 - u * u) ** 2);
+// Roll knots: the fillet of radius r at each end of a half-length L, sampled at equal angles.
+const ROLL = [0, 0.414, 1];
+
+// Knots along one axis: both rolls, the extra knots asked for, and fill to keep gaps under step.
+function padKnots(L, r, extra, step) {
+  const inner = L - r;
+  let ks = [];
+  for (const t of ROLL) ks.push(inner + r * t, -(inner + r * t));
+  for (const e of extra) if (Math.abs(e) < inner - 0.002) ks.push(e);
+  ks.sort((p, q) => p - q);
+  ks = ks.filter((k, i) => i === 0 || k - ks[i - 1] > 0.0015);
+  const out = [ks[0]];
+  for (let i = 1; i < ks.length; i++) {
+    const gap = ks[i] - ks[i - 1];
+    const n = Math.ceil(gap / step - 1e-6);
+    for (let k = 1; k < n; k++) out.push(ks[i - 1] + (gap * k) / n);
+    out.push(ks[i]);
+  }
+  return out;
+}
+
+// Upholstered pad (or moulded shell): a subdivided box w (x) by d (z) by h (y, from 0 up), its
+// edges rolled to rh across and rv over the top (rb at the bottom), the top crowned and dished,
+// with an optional insert panel quilted into channels. Built as one welded, smooth skin; the
+// triangles of the insert come back as their own geometry for the grey vinyl.
+//   panel: [fx, fz] insert half-size as a fraction of the top; channels: count; seamAxis: the
+//   axis the seams are spaced along ('x' or 'z'); dishAxis: the axis whose ends are raised.
+// Returns { border, insert (or null), piping (welt round the top edge, or null) }.
+function pad(w, d, h, o = {}) {
+  const {
+    rh = 0.035, rv = 0.03, rb = 0.012, crown = 0, dish = 0, dishAxis = 'z',
+    panel = null, channels = 4, seamAxis = 'z', groove = 0.0045, puff = 0.005, gw = 0.0065,
+    step = 0.1, bottom = false, piping = false,
+  } = o;
+  const a = w / 2;
+  const b = d / 2;
+  const P = panel ? [panel[0] * a, panel[1] * b] : null;
+  const ex = { x: [], z: [] };
+  const seams = [];
+  let ps = 0;
+  let cw = 1;
+  if (P) {
+    for (const [k, p] of [['x', P[0]], ['z', P[1]]]) for (const sg of [-1, 1]) ex[k].push(sg * (p - gw), sg * p, sg * (p + gw));
+    ps = seamAxis === 'x' ? P[0] : P[1];
+    cw = (2 * ps) / channels;
+    for (let k = 0; k < channels; k++) {
+      const s0 = -ps + k * cw;
+      ex[seamAxis].push(s0 + cw / 2);
+      if (k > 0) {
+        seams.push(s0);
+        ex[seamAxis].push(s0 - gw, s0, s0 + gw);
+      }
+    }
+  }
+  const X = padKnots(a, rh, ex.x, step);
+  const Z = padKnots(b, rh, ex.z, step);
+  const Y = [0, rb];
+  const yTop = h - rv;
+  const nIn = Math.max(1, Math.ceil((yTop - rb) / 0.06));
+  for (let k = 1; k < nIn; k++) Y.push(lerp(rb, yTop, k / nIn));
+  Y.push(yTop, yTop + rv * 0.414, h);
+
+  // Box skin, welded by box position.
+  const boxP = [];
+  const ids = new Map();
+  const vid = (x, y, z) => {
+    const key = `${x.toFixed(5)},${y.toFixed(5)},${z.toFixed(5)}`;
+    let i = ids.get(key);
+    if (i === undefined) {
+      i = boxP.length / 3;
+      boxP.push(x, y, z);
+      ids.set(key, i);
+    }
+    return i;
+  };
+  const tris = [];
+  const face = (U, V, at, N) => {
+    const grid = U.map((u) => V.map((v) => vid(...at(u, v))));
+    const p0 = at(U[0], V[0]);
+    const p1 = at(U[1], V[0]);
+    const p2 = at(U[0], V[1]);
+    const e1 = v3(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+    const e2 = v3(p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]);
+    const flip = e1.cross(e2).dot(v3(...N)) < 0;
+    for (let i = 0; i < U.length - 1; i++) {
+      for (let j = 0; j < V.length - 1; j++) {
+        const A = grid[i][j];
+        const B = grid[i + 1][j];
+        const C = grid[i + 1][j + 1];
+        const D = grid[i][j + 1];
+        if (flip) tris.push(A, C, B, A, D, C);
+        else tris.push(A, B, C, A, C, D);
+      }
+    }
+  };
+  face(X, Z, (x, z) => [x, h, z], [0, 1, 0]);
+  face(X, Y, (x, y) => [x, y, b], [0, 0, 1]);
+  face(X, Y, (x, y) => [x, y, -b], [0, 0, -1]);
+  face(Z, Y, (z, y) => [a, y, z], [1, 0, 0]);
+  face(Z, Y, (z, y) => [-a, y, z], [-1, 0, 0]);
+  if (bottom) face(X, Z, (x, z) => [x, 0, z], [0, -1, 0]);
+
+  // Roll the edges, crown and dish the top, quilt the insert.
+  const deform = (x, y, z) => {
+    const qx = clampTo(x, rh - a, a - rh);
+    const qy = clampTo(y, rb, h - rv);
+    const qz = clampTo(z, rh - b, b - rh);
+    const ry = y > qy ? rv : rb;
+    let nx = (x - qx) / rh;
+    let ny = (y - qy) / ry;
+    let nz = (z - qz) / rh;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    nx /= l;
+    ny /= l;
+    nz /= l;
+    const px = qx + nx * rh;
+    let py = qy + ny * ry;
+    const pz = qz + nz * rh;
+    const lift = (py / h) ** 2;
+    const ux = clampTo(x / a, -1, 1);
+    const uz = clampTo(z / b, -1, 1);
+    py += crown * (1 - ux * ux) * (1 - uz * uz) * lift;
+    const ud = dishAxis === 'x' ? ux : uz;
+    py += dish * ud * ud * lift;
+    if (P) {
+      const up = Math.max(0, ny) ** 2;
+      const sd = Math.max(Math.abs(x) - P[0], Math.abs(z) - P[1]);
+      let q = -1.25 * groove * bump(sd / gw);
+      if (sd < 0) {
+        const s = seamAxis === 'x' ? x : z;
+        const f = (s + ps) / cw;
+        const inside = smooth01(-sd / 0.018);
+        q += puff * Math.sin(Math.PI * (f - Math.floor(f))) * inside;
+        for (const sk of seams) q -= groove * bump((s - sk) / gw) * smooth01(-sd / gw);
+      }
+      py += q * up;
+    }
+    return [px, py, pz];
+  };
+
+  const n = boxP.length / 3;
+  const pos = new Float32Array(n * 3);
+  const uv = new Float32Array(n * 2);
+  for (let i = 0; i < n; i++) {
+    const [x, y, z] = [boxP[3 * i], boxP[3 * i + 1], boxP[3 * i + 2]];
+    pos.set(deform(x, y, z), 3 * i);
+    if (P) {
+      const s = seamAxis === 'x' ? x : z;
+      const t = seamAxis === 'x' ? z : x;
+      // A single wide panel takes the plain middle of the map: no stitch rows across it.
+      uv[2 * i] = channels > 1 ? (s + ps) / cw : 0.5 + (0.35 * s) / ps;
+      uv[2 * i + 1] = t / 0.2;
+    } else {
+      uv[2 * i] = x / w + 0.5;
+      uv[2 * i + 1] = z / d + 0.5;
+    }
+  }
+  const whole = new THREE.BufferGeometry();
+  whole.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  whole.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  whole.setIndex(tris);
+  whole.computeVertexNormals();
+
+  let insert = null;
+  let border = whole;
+  if (P) {
+    const inIdx = [];
+    const outIdx = [];
+    for (let k = 0; k < tris.length; k += 3) {
+      let cx = 0;
+      let cy = 0;
+      let cz = 0;
+      for (let j = 0; j < 3; j++) {
+        cx += boxP[3 * tris[k + j]];
+        cy += boxP[3 * tris[k + j] + 1];
+        cz += boxP[3 * tris[k + j] + 2];
+      }
+      const inside = cy / 3 > h - 1e-6 && Math.max(Math.abs(cx / 3) - P[0], Math.abs(cz / 3) - P[1]) < 0;
+      (inside ? inIdx : outIdx).push(tris[k], tris[k + 1], tris[k + 2]);
+    }
+    const part = (idx) => {
+      const g = new THREE.BufferGeometry();
+      for (const name of ['position', 'normal', 'uv']) g.setAttribute(name, whole.getAttribute(name));
+      g.setIndex(idx);
+      return g;
+    };
+    insert = part(inIdx);
+    border = part(outIdx);
+  }
+
+  // Welt piping round the top edge, on the 45 degree line of the roll.
+  let pipingGeo = null;
+  if (piping) {
+    // Finer than the skin round the corners, so the spline cannot cut inside the roll.
+    const fine = [0, 11.25, 22.5, 33.75, 45].map((deg) => Math.tan((deg * Math.PI) / 180));
+    const edgeKnots = (L, r) => {
+      const ks = fine.map((t) => L - r + r * t);
+      return [...ks.slice().reverse().map((k) => -k), -(L - r) / 3, (L - r) / 3, ...ks];
+    };
+    const ekx = edgeKnots(a, rh);
+    const ekz = edgeKnots(b, rh);
+    const loop = [];
+    for (const x of ekx) loop.push([x, h, b]);
+    for (const z of ekz.slice().reverse()) loop.push([a, h, z]);
+    for (const x of ekx.slice().reverse()) loop.push([x, h, -b]);
+    for (const z of ekz) loop.push([-a, h, z]);
+    const pts = [];
+    for (const p of loop) {
+      const q = v3(...deform(...p));
+      if (!pts.length || q.distanceTo(pts[pts.length - 1]) > 1e-4) pts.push(q);
+    }
+    if (pts[0].distanceTo(pts[pts.length - 1]) < 1e-4) pts.pop();
+    pipingGeo = new THREE.TubeGeometry(new LoopCurve(pts), pts.length, 0.0042, 5, true);
+  }
+  return { border, insert, piping: pipingGeo };
+}
+
+// Closed polyline sampled by point index rather than arc length, so a tube through it gets one
+// segment per point: dense round the welt's corners, sparse along its straight runs.
+class LoopCurve extends THREE.Curve {
+  constructor(pts) {
+    super();
+    this.pts = pts;
+  }
+
+  getPoint(t, target = new THREE.Vector3()) {
+    const n = this.pts.length;
+    const f = (((t % 1) + 1) % 1) * n;
+    const i = Math.floor(f);
+    return target.copy(this.pts[i % n]).lerp(this.pts[(i + 1) % n], f - i);
+  }
+
+  getUtoTmapping(u) {
+    return u;
+  }
+}
+
+// Adds a pad's meshes to parent at pos, turned by rotZ about z (-pi/2 stands the pad's top up to
+// face forward, +pi/2 to face aft); mat is the body material (vinyl, or the shell for mouldings).
+function placePad(parent, hm, geos, pos, rotZ = 0, mat = hm.vinyl) {
+  const meshes = [add(parent, geos.border, mat)];
+  if (geos.insert) meshes.push(add(parent, geos.insert, hm.insert));
+  if (geos.piping) meshes.push(add(parent, geos.piping, hm.piping, { cast: false }));
+  for (const mesh of meshes) {
+    mesh.position.copy(pos);
+    mesh.rotation.z = rotZ;
+  }
+  return meshes;
 }
 
 // ---------- small helpers ----------
@@ -248,6 +565,28 @@ function moulding(points, z0, z1, wallZ = null, bevel = 0.008) {
   return g;
 }
 
+// Moulded part: a side profile (x-y points, either winding) with filleted corners (radii per
+// point), extruded across z0..z1 with a rounded edge of radius b all round, so it reads as a
+// one-piece moulding rather than a cut box. The outline stays where the points put it.
+function roundedMoulding(points, radii, z0, z1, b = 0.015) {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const [x0, y0] = points[i];
+    const [x1, y1] = points[(i + 1) % points.length];
+    area += x0 * y1 - x1 * y0;
+  }
+  const ccw = area > 0 ? points : points.slice().reverse();
+  const rr = area > 0 ? radii : radii.slice().reverse();
+  const loop = offsetLoop(roundLoop(ccw, rr, 4, 0.06), -b);
+  const shape = new THREE.Shape(loop.map(([x, y]) => new THREE.Vector2(x, y)));
+  const g = new THREE.ExtrudeGeometry(shape, { depth: z1 - z0 - 2 * b, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 3, curveSegments: 4 });
+  g.translate(0, 0, z0 + b);
+  // Smooth across the fillets and the rounded edge, so the moulding shades as one surface.
+  const smooth = toCreasedNormals(g, Math.PI / 5);
+  g.dispose();
+  return smooth;
+}
+
 function atlasPlane(w, h, [px, py, pw, ph]) {
   const g = new THREE.PlaneGeometry(w, h);
   const u0 = px / ATLAS_W;
@@ -257,20 +596,6 @@ function atlasPlane(w, h, [px, py, pw, ph]) {
   g.setAttribute('uv', new THREE.Float32BufferAttribute([u0, vt, u1, vt, u0, vb, u1, vb], 2));
   return g;
 }
-
-// Closed loop round a rounded rectangle of half-sizes a, b, corner radius r, as [u, v] pairs.
-function roundedRect(a, b, r, per = 3) {
-  const pts = [];
-  for (const [cu, cv, a0] of [[a - r, b - r, 0], [r - a, b - r, 0.5], [r - a, r - b, 1], [a - r, r - b, 1.5]]) {
-    for (let i = 0; i <= per; i++) {
-      const t = Math.PI * (a0 + i / (2 * per));
-      pts.push([cu + r * Math.cos(t), cv + r * Math.sin(t)]);
-    }
-  }
-  return pts;
-}
-
-const pipe = (group, mat, pts, radius = 0.0035) => add(group, tube(pts, radius, pts.length * 2, 3, true), mat, { cast: false });
 
 // ---------- instruments ----------
 
@@ -332,53 +657,96 @@ function compass(group, m, x, y, z, r = 0.058) {
 
 // Wheel on a tilt column: rubber boot from the dash, knuckle, then the shaft tilted a little
 // further up to a dished three-spoke wheel. tilt is the face angle from vertical. Returns the rim centre.
-function helmWheel(group, m, base, tilt, radius = 0.175) {
+function helmWheel(group, m, hm, base, tilt, radius = 0.175) {
   const n = v3(-Math.cos(tilt), Math.sin(tilt), 0);
   const knuckle = base.clone().addScaledVector(n, 0.075);
   rod(group, base.clone().addScaledVector(n, -0.01), knuckle, 0.034, m.rubber, 14);
-  const joint = add(group, new THREE.SphereGeometry(0.03, 10, 6), m.dash);
+  // Rubber boot rings on the column.
+  for (const f of [0.25, 0.5, 0.75]) {
+    const ring = add(group, new THREE.TorusGeometry(0.034, 0.004, 4, 12), m.rubber, { cast: false });
+    ring.position.copy(base).addScaledVector(n, -0.01 + f * 0.085);
+    ring.quaternion.setFromUnitVectors(v3(0, 0, 1), n);
+  }
+  const joint = add(group, new THREE.SphereGeometry(0.03, 12, 8), hm.satin);
   joint.position.copy(knuckle);
   const axis = v3(-Math.cos(tilt + 0.16), Math.sin(tilt + 0.16), 0);
   const centre = knuckle.clone().addScaledVector(axis, 0.1);
-  rod(group, knuckle, centre, 0.017, m.dash, 10);
-  const hub = add(group, new THREE.CylinderGeometry(0.044, 0.05, 0.05, 18), m.rubber);
+  rod(group, knuckle, centre, 0.017, hm.satin, 12);
+  const hub = add(group, new THREE.CylinderGeometry(0.042, 0.05, 0.05, 20), m.rubber);
   hub.position.copy(centre);
   hub.quaternion.setFromUnitVectors(v3(0, 1, 0), axis);
-  const cap = add(group, new THREE.CylinderGeometry(0.026, 0.026, 0.01, 18), m.stainless);
-  cap.position.copy(centre).addScaledVector(axis, 0.028);
+  // Polished centre cap with its nut.
+  const cap = add(group, new THREE.CylinderGeometry(0.03, 0.034, 0.012, 20), hm.polished);
+  cap.position.copy(centre).addScaledVector(axis, 0.03);
   cap.quaternion.copy(hub.quaternion);
+  const nut = add(group, new THREE.CylinderGeometry(0.011, 0.011, 0.01, 6), hm.polished, { cast: false });
+  nut.position.copy(centre).addScaledVector(axis, 0.04);
+  nut.quaternion.copy(hub.quaternion);
+  // Polished stainless rim and three spokes, dished toward the helmsman.
   const rimC = centre.clone().addScaledVector(axis, 0.035);
-  const rim = add(group, new THREE.TorusGeometry(radius, 0.0115, 8, 36), m.stainless);
+  const rim = add(group, new THREE.TorusGeometry(radius, 0.0125, 8, 48), hm.polished);
   rim.position.copy(rimC);
   rim.quaternion.setFromUnitVectors(v3(0, 0, 1), axis);
   const across = v3(0, 0, 1);
   const up = new THREE.Vector3().crossVectors(axis, across);
   for (const a of [0, Math.PI, Math.PI * 1.5]) {
     const dir = across.clone().multiplyScalar(Math.cos(a)).addScaledVector(up, Math.sin(a));
-    rod(group, centre.clone().addScaledVector(dir, 0.04), rimC.clone().addScaledVector(dir, radius - 0.008), 0.0085, m.rubber, 6);
+    rod(group, centre.clone().addScaledVector(dir, 0.04).addScaledVector(axis, 0.012), rimC.clone().addScaledVector(dir, radius - 0.01), 0.0078, hm.polished, 8);
   }
   return rimC;
 }
 
-// Top-mount throttle and shift binnacle on a flat at y; twin gets two levers with ball knobs.
-function binnacle(group, m, x, y, z, twin) {
-  const wz = twin ? 0.14 : 0.1;
-  const body = add(group, new RoundedBoxGeometry(0.17, 0.1, wz, 2, 0.03), m.dash);
+// Top-mount throttle and shift binnacle on a flat at y, levers raking aft (-x). Satin body on
+// a rubber gasket with a raised pivot dome, polished arms, trim rocker on each grip, neutral and
+// trim buttons on the body. Single: a T-grip; twin: two arms with ball knobs.
+function binnacle(group, m, hm, x, y, z, twin) {
+  const wz = twin ? 0.15 : 0.11;
+  add(group, new RoundedBoxGeometry(0.19, 0.008, wz + 0.016, 1, 0.003), m.rubber).position.set(x, y + 0.004, z);
+  const body = add(group, new RoundedBoxGeometry(0.17, 0.085, wz, 3, 0.03), hm.satin);
   body.position.set(x, y + 0.05, z);
-  box(group, m.rubber, [0.18, 0.008, wz + 0.012], [x, y + 0.004, z]);
-  const levers = twin ? [z - 0.034, z + 0.034] : [z];
+  const dome = add(group, new THREE.CylinderGeometry(0.042, 0.042, wz - 0.012, 22), hm.satin);
+  dome.position.set(x + 0.008, y + 0.086, z);
+  dome.rotation.x = Math.PI / 2;
+  // Chrome bezel strip round the dome ends and the button cluster on the aft face.
+  for (const s of [-1, 1]) {
+    const bez = add(group, new THREE.TorusGeometry(0.04, 0.0035, 4, 18), hm.polished, { cast: false });
+    bez.position.set(x + 0.008, y + 0.086, z + s * (wz / 2 - 0.005));
+  }
+  for (const [dz, mat] of [[-0.022, m.rubber], [0.022, m.rubber]]) {
+    const btn = add(group, new THREE.CylinderGeometry(0.009, 0.009, 0.008, 12), mat, { cast: false });
+    btn.position.set(x - 0.085, y + 0.06, z + dz);
+    btn.rotation.z = Math.PI / 2;
+  }
+  const ledN = add(group, new THREE.BoxGeometry(0.003, 0.005, 0.01), hm.led, { cast: false });
+  ledN.position.set(x - 0.0855, y + 0.077, z);
+  const levers = twin ? [z - 0.038, z + 0.038] : [z];
   for (const zl of levers) {
-    const pivot = add(group, new THREE.CylinderGeometry(0.024, 0.024, twin ? 0.026 : 0.04, 14), m.rubber);
-    pivot.position.set(x + 0.01, y + 0.096, zl);
-    pivot.rotation.x = Math.PI / 2;
-    add(group, tube([v3(x + 0.01, y + 0.1, zl), v3(x - 0.01, y + 0.17, zl), v3(x - 0.05, y + 0.235, zl)], 0.0105, 10, 8), m.stainless);
+    const hubL = add(group, new THREE.CylinderGeometry(0.03, 0.03, twin ? 0.022 : 0.034, 18), hm.satin);
+    hubL.position.set(x + 0.008, y + 0.086, zl);
+    hubL.rotation.x = Math.PI / 2;
+    const capL = add(group, new THREE.CylinderGeometry(0.016, 0.016, (twin ? 0.022 : 0.034) + 0.004, 14), hm.polished, { cast: false });
+    capL.position.copy(hubL.position);
+    capL.rotation.x = Math.PI / 2;
+    const arm = [v3(x + 0.006, y + 0.1, zl), v3(x - 0.004, y + 0.15, zl), v3(x - 0.022, y + 0.2, zl), v3(x - 0.05, y + 0.238, zl)];
+    add(group, tube(arm, 0.0095, 10, 8), m.stainless);
     if (twin) {
-      const knob = add(group, new THREE.SphereGeometry(0.022, 12, 8), m.rubber);
-      knob.position.set(x - 0.055, y + 0.245, zl);
+      const knob = add(group, new THREE.SphereGeometry(0.023, 16, 12), m.rubber);
+      knob.position.set(x - 0.058, y + 0.25, zl);
+      knob.scale.set(1, 0.92, 0.9);
+      const rocker = add(group, new RoundedBoxGeometry(0.016, 0.006, 0.011, 1, 0.0025), hm.shell, { cast: false });
+      rocker.position.set(x - 0.064, y + 0.2705, zl);
     } else {
-      const grip = add(group, new THREE.CylinderGeometry(0.016, 0.016, 0.09, 14), m.rubber);
-      grip.position.set(x - 0.052, y + 0.24, zl);
+      // T-grip across the arm with polished end caps, the trim rocker on top at the inboard end.
+      const grip = add(group, new THREE.CapsuleGeometry(0.017, 0.085, 4, 14), m.rubber);
+      grip.position.set(x - 0.055, y + 0.246, zl);
       grip.rotation.x = Math.PI / 2;
+      for (const s of [-1, 1]) {
+        const end = add(group, new THREE.CylinderGeometry(0.012, 0.012, 0.004, 12), hm.polished, { cast: false });
+        end.position.set(x - 0.055, y + 0.246, zl + s * 0.0605);
+        end.rotation.x = Math.PI / 2;
+      }
+      const rocker = add(group, new RoundedBoxGeometry(0.02, 0.009, 0.026, 1, 0.003), hm.shell, { cast: false });
+      rocker.position.set(x - 0.055, y + 0.265, zl - 0.026);
     }
   }
 }
@@ -404,69 +772,149 @@ function vhfHandset(group, m, at, normal) {
   add(group, tube(pts, 0.0024, 72, 3), m.rubber, { cast: false });
 }
 
+// Rubber phone tray on a flat at y, its long side across the boat, with a phone lying in it.
+function phoneTray(group, m, hm, x, y, z) {
+  add(group, new RoundedBoxGeometry(0.1, 0.02, 0.18, 2, 0.008), m.rubber).position.set(x, y + 0.008, z);
+  const well = add(group, new RoundedBoxGeometry(0.082, 0.004, 0.162, 1, 0.0015), hm.recess, { cast: false });
+  well.position.set(x, y + 0.0172, z);
+  const phone = add(group, new RoundedBoxGeometry(0.072, 0.008, 0.148, 2, 0.003), hm.bezel, { cast: false });
+  phone.position.set(x, y + 0.0205, z + 0.004);
+  phone.rotation.y = 0.04;
+}
+
+// Flush cup holder in a flat at y: polished rim, dark rubber well.
+function cupHolder(group, m, hm, x, y, z) {
+  const rim = add(group, new THREE.TorusGeometry(0.041, 0.0045, 4, 22), hm.polished, { cast: false });
+  rim.position.set(x, y + 0.0035, z);
+  rim.rotation.x = Math.PI / 2;
+  rim.scale.z = 0.6;
+  const well = add(group, new THREE.CircleGeometry(0.039, 24), m.rubber, { cast: false });
+  well.position.set(x, y + 0.0028, z);
+  well.rotation.x = -Math.PI / 2;
+}
+
 // ---------- seats ----------
 
-// Pedestal helm seat facing forward at (x, z): bolted base plate, alloy column, swivel head with
-// lever, slide rails with the release bar, moulded shell, vinyl cushion with piping, flip-up
-// front bolster and a winged backrest with pleat seams.
+// Pedestal under a helm seat whose swivel top is at yHead: bolted, chamfered base plate, flared
+// foot, brushed alloy column, footrest ring on three spokes from a clamp collar, upper collar and
+// swivel housing with its lock lever.
+function pedestal(s, m, hm, yHead) {
+  const plate = add(s, new THREE.CylinderGeometry(0.148, 0.158, 0.012, 28), hm.post);
+  plate.position.y = DECK_Y + 0.006;
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 6 + (i * Math.PI) / 3;
+    const bolt = add(s, new THREE.CylinderGeometry(0.0085, 0.0095, 0.008, 6), m.stainless, { cast: false });
+    bolt.position.set(Math.cos(a) * 0.125, DECK_Y + 0.015, Math.sin(a) * 0.125);
+  }
+  const foot = add(s, new THREE.CylinderGeometry(0.046, 0.072, 0.06, 24), hm.post);
+  foot.position.y = DECK_Y + 0.012 + 0.03;
+  const y0 = DECK_Y + 0.07;
+  const y1 = yHead - 0.075;
+  const col = add(s, new THREE.CylinderGeometry(0.037, 0.037, y1 - y0 + 0.02, 24), hm.post);
+  col.position.y = (y0 + y1) / 2;
+  // Footrest ring: about 0.3 m off the floor, 0.4 m across.
+  const yF = DECK_Y + 0.3;
+  const clampC = add(s, new THREE.CylinderGeometry(0.047, 0.047, 0.05, 20), hm.satin);
+  clampC.position.y = yF;
+  const ring = add(s, new THREE.TorusGeometry(0.2, 0.011, 6, 36), m.stainless);
+  ring.position.y = yF + 0.012;
+  ring.rotation.x = Math.PI / 2;
+  for (let i = 0; i < 3; i++) {
+    const a = Math.PI / 2 + (i * 2 * Math.PI) / 3;
+    const c = v3(Math.cos(a), 0, Math.sin(a));
+    rod(s, c.clone().multiplyScalar(0.044).setY(yF), c.clone().multiplyScalar(0.194).setY(yF + 0.012), 0.0085, m.stainless, 8);
+  }
+  const collar = add(s, new THREE.CylinderGeometry(0.05, 0.05, 0.045, 20), hm.satin);
+  collar.position.y = yHead - 0.075;
+  const housing = add(s, new THREE.CylinderGeometry(0.085, 0.07, 0.04, 24), hm.satin);
+  housing.position.y = yHead - 0.03;
+  const flange = add(s, new THREE.CylinderGeometry(0.095, 0.095, 0.01, 24), hm.post);
+  flange.position.y = yHead - 0.005;
+  // Swivel lock lever out to the front quarter, black knob on the end.
+  rod(s, v3(0.055, yHead - 0.03, -0.055), v3(0.16, yHead - 0.045, -0.15), 0.0055, m.stainless, 6);
+  const knob = add(s, new THREE.SphereGeometry(0.014, 10, 8), m.rubber);
+  knob.position.set(0.163, yHead - 0.046, -0.153);
+  knob.scale.set(1.3, 1, 1.3);
+}
+
+// Pedestal helm seat facing forward (+x) at (x, z): pedestal, slide on its rails with the release
+// bar, a moulded shell tray carrying the pleated cushion, a flip-up front bolster on a piano hinge
+// with side pivots, and a reclined backrest (pleated, winged front; upholstered back with a grab
+// handle) on a stem from the tray. Two-tone vinyl (off-white body, grey pleated inserts),
+// charcoal welts. About 0.5 m wide and 0.68 m fore and aft; cushion top at cushionTop.
 function pedestalSeat(group, m, hm, x, z, cushionTop = DECK_Y + 0.63) {
   const s = new THREE.Group();
   s.position.set(x, 0, z);
   group.add(s);
-  const plate = add(s, new THREE.CylinderGeometry(0.16, 0.17, 0.014, 20), m.galv);
-  plate.position.y = DECK_Y + 0.006;
-  for (let i = 0; i < 4; i++) {
-    const a = Math.PI / 4 + (i * Math.PI) / 2;
-    const bolt = add(s, new THREE.CylinderGeometry(0.009, 0.009, 0.008, 6), m.stainless, { cast: false });
-    bolt.position.set(Math.cos(a) * 0.13, DECK_Y + 0.016, Math.sin(a) * 0.13);
+  const yHead = cushionTop - 0.2;
+  pedestal(s, m, hm, yHead);
+
+  // Slide: carrier plate on the swivel, two rails, the seat frame on them, release bar in front.
+  box(s, m.galv, [0.26, 0.008, 0.24], [0, yHead + 0.004, 0]);
+  for (const dz of [-0.115, 0.115]) {
+    add(s, new RoundedBoxGeometry(0.36, 0.016, 0.03, 1, 0.004), m.stainless).position.set(-0.01, yHead + 0.016, dz);
   }
-  const yHead = cushionTop - 0.19;
-  const col = add(s, new THREE.CylinderGeometry(0.04, 0.048, yHead - DECK_Y - 0.03, 16), m.galv);
-  col.position.y = (DECK_Y + 0.01 + yHead - 0.02) / 2;
-  const collar = add(s, new THREE.CylinderGeometry(0.052, 0.052, 0.035, 16), m.dash);
-  collar.position.y = yHead - 0.03;
-  const swivel = add(s, new THREE.CylinderGeometry(0.1, 0.1, 0.022, 18), m.dash);
-  swivel.position.y = yHead - 0.002;
-  rod(s, v3(0.06, yHead, 0.07), v3(0.15, yHead - 0.01, 0.15), 0.006, m.rubber, 6);
-  const knob = add(s, new THREE.SphereGeometry(0.014, 8, 6), m.rubber);
-  knob.position.set(0.155, yHead - 0.01, 0.155);
-  // Slide: carrier plate on the swivel, two rails under the shell, release bar at the front.
-  box(s, m.galv, [0.3, 0.012, 0.3], [0, yHead + 0.015, 0]);
-  for (const dz of [-0.13, 0.13]) box(s, m.stainless, [0.4, 0.02, 0.024], [0.01, yHead + 0.031, dz]);
-  add(s, tube([v3(0.2, yHead + 0.032, -0.09), v3(0.245, yHead + 0.025, -0.06), v3(0.25, yHead + 0.024, 0), v3(0.245, yHead + 0.025, 0.06), v3(0.2, yHead + 0.032, 0.09)], 0.006, 12, 5), m.stainless, { cast: false });
-  // Shell and cushion.
-  const shellY = yHead + 0.066;
-  const shell = add(s, new RoundedBoxGeometry(0.46, 0.05, 0.48, 1, 0.02), hm.shell);
-  shell.position.set(0.01, shellY, 0);
-  const cushion = add(s, new RoundedBoxGeometry(0.4, 0.1, 0.46, 2, 0.035), hm.vinyl);
-  cushion.position.set(-0.01, cushionTop - 0.05, 0);
-  pipe(s, hm.piping, roundedRect(0.2 - 0.008, 0.23 - 0.008, 0.03).map(([u, w]) => v3(-0.01 + u, cushionTop - 0.011, w)));
-  for (const dz of [-0.075, 0.075]) box(s, hm.piping, [0.28, 0.004, 0.004], [-0.02, cushionTop + 0.0005, dz], { cast: false });
-  // Flip-up bolster across the front.
-  const bolster = add(s, new RoundedBoxGeometry(0.11, 0.1, 0.46, 2, 0.045), hm.vinyl);
-  bolster.position.set(0.2, cushionTop - 0.03, 0);
-  // Backrest, reclined, with wings, pleat seams and a moulded shell.
-  const back = new THREE.Group();
-  back.position.set(-0.19, cushionTop - 0.03, 0);
-  back.rotation.z = 0.2;
-  s.add(back);
-  const pad = add(back, new RoundedBoxGeometry(0.085, 0.42, 0.42, 2, 0.035), hm.vinyl);
-  pad.position.set(0, 0.23, 0);
-  const shellB = add(back, new RoundedBoxGeometry(0.04, 0.54, 0.46, 1, 0.015), hm.shell);
-  shellB.position.set(-0.055, 0.17, 0);
+  box(s, hm.satin, [0.32, 0.022, 0.28], [-0.03, yHead + 0.035, 0]);
+  add(s, tube([v3(0.13, yHead + 0.02, -0.1), v3(0.19, yHead + 0.018, -0.07), v3(0.2, yHead + 0.018, 0), v3(0.19, yHead + 0.018, 0.07), v3(0.13, yHead + 0.02, 0.1)], 0.0055, 14, 6), m.stainless, { cast: false });
+
+  // Shell tray and cushion: the cushion's open underside sits down inside the tray.
+  const yTray = yHead + 0.044;
+  const trayX0 = -0.255;
+  const trayX1 = 0.165;
+  placePad(s, hm, pad(trayX1 - trayX0, 0.5, 0.075, { rh: 0.03, rv: 0.02, rb: 0.022, bottom: true, step: 0.12 }), v3((trayX0 + trayX1) / 2, yTray, 0), 0, hm.shell);
+  const cBot = yTray + 0.035;
+  const crown = 0.014;
+  const dish = 0.02;
+  placePad(s, hm, pad(0.34, 0.46, cushionTop - cBot - crown, {
+    rh: 0.04, rv: 0.035, rb: 0.012, crown, dish, panel: [0.66, 0.62], channels: 5, seamAxis: 'z', piping: true,
+  }), v3(-0.01, cBot, 0));
+
+  // Flip-up bolster: its own moulded base on a piano hinge at the tray front, pivots each side.
+  const bx = 0.226;
+  placePad(s, hm, pad(0.112, 0.5, 0.05, { rh: 0.025, rv: 0.02, rb: 0.02, bottom: true, step: 0.12 }), v3(bx, yTray + 0.025, 0), 0, hm.shell);
+  placePad(s, hm, pad(0.108, 0.46, cushionTop + 0.012 - (yTray + 0.06), { rh: 0.045, rv: 0.045, rb: 0.012, dish, piping: true, step: 0.1 }), v3(bx, yTray + 0.06, 0));
+  const hinge = add(s, new THREE.CylinderGeometry(0.0065, 0.0065, 0.42, 10), m.stainless, { cast: false });
+  hinge.position.set(0.1665, yTray + 0.008, 0);
+  hinge.rotation.x = Math.PI / 2;
   for (const side of [-1, 1]) {
-    const wing = add(back, new RoundedBoxGeometry(0.1, 0.38, 0.075, 2, 0.032), hm.vinyl);
-    wing.position.set(0.02, 0.22, side * 0.195);
-    rod(back, v3(0.044, 0.05, side * 0.159), v3(0.044, 0.4, side * 0.159), 0.0035, hm.piping, 4);
+    const plate = add(s, new RoundedBoxGeometry(0.07, 0.036, 0.004, 1, 0.0015), m.stainless, { cast: false });
+    plate.position.set(0.167, yTray + 0.04, side * 0.252);
+    const pin = add(s, new THREE.CylinderGeometry(0.011, 0.011, 0.008, 14), hm.satin, { cast: false });
+    pin.position.set(0.167, yTray + 0.04, side * 0.256);
+    pin.rotation.x = Math.PI / 2;
   }
-  for (const y of [0.16, 0.3]) box(back, hm.piping, [0.004, 0.004, 0.31], [0.0425, y, 0], { cast: false });
-  rod(back, v3(0.032, 0.43, -0.159), v3(0.032, 0.43, 0.159), 0.0035, hm.piping, 4);
+
+  // Backrest: reclined 11 degrees. A pleated front pad with horizontal channels and raised
+  // wings, an upholstered back with a plain grey panel, welted both sides of a moulded core board
+  // that shows as a grey line between them; polished grab handle across the back near the top,
+  // and a satin stem down to the tray.
+  const back = new THREE.Group();
+  back.position.set(-0.262, cushionTop - 0.035, 0);
+  back.rotation.z = 0.19;
+  s.add(back);
+  add(back, new RoundedBoxGeometry(0.014, 0.43, 0.43, 1, 0.005), hm.shell).position.set(0, 0.225, 0);
+  placePad(back, hm, pad(0.44, 0.44, 0.075, {
+    rh: 0.04, rv: 0.035, rb: 0.012, crown: 0.012, dish: 0.045, panel: [0.64, 0.6], channels: 4, seamAxis: 'x', piping: true,
+  }), v3(0.003, 0.225, 0), -Math.PI / 2);
+  placePad(back, hm, pad(0.44, 0.44, 0.045, {
+    rh: 0.04, rv: 0.03, rb: 0.012, crown: 0.022, panel: [0.62, 0.56], channels: 1, seamAxis: 'z', puff: 0.003, piping: true,
+  }), v3(-0.003, 0.225, 0), Math.PI / 2);
+  const hy = 0.36;
+  add(back, tube([v3(-0.058, hy, -0.13), v3(-0.095, hy + 0.025, -0.12), v3(-0.108, hy + 0.045, 0), v3(-0.095, hy + 0.025, 0.12), v3(-0.058, hy, 0.13)], 0.0095, 16, 6), hm.polished);
+  for (const side of [-1, 1]) {
+    const foot = add(back, new THREE.CylinderGeometry(0.016, 0.018, 0.014, 12), hm.satin, { cast: false });
+    foot.position.set(-0.058, hy, side * 0.13);
+    foot.rotation.z = Math.PI / 2;
+  }
+  const stem = add(s, new RoundedBoxGeometry(0.035, 0.13, 0.12, 1, 0.008), hm.shell);
+  stem.position.set(-0.262, yTray + 0.085, 0);
+  stem.rotation.z = 0.19;
 }
 
 // ---------- hardtop ----------
 
 export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
-  const hm = helmMaterials();
+  const hm = helmMaterials(m);
   const [Cx, Cy] = C;
   const walls = (x, y) => wallZ(x, y) - 0.004;
   const xB = Cx - 0.07;         // forward bulkhead, just aft of the screen foot
@@ -480,8 +928,9 @@ export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
   const yKnee = Math.min(DECK_Y + 0.58, dTop - 0.45);
   const wHelm = walls(xT, dTop - 0.2);
   const zw = wHelm - 0.4;       // wheel and helm seat centreline
-  // MFD sized to the dash: 9" on the 550, 10" on the 620, 12" on the 680.
-  const diag = (wHelm > 0.82 ? 12 : wHelm > 0.77 ? 10 : 9) * 0.0254;
+  // MFD sized to the dash: 9" on the 550, 10" on the 620 and 680 (a 12" would squeeze the
+  // cuddy doorway under the passenger dash).
+  const diag = (wHelm > 0.64 ? 10 : 9) * 0.0254;
   const mfdW = diag * 0.848;
   const mfdH = diag * 0.53;
   const zM = zw - 0.175 - 0.03 - mfdW / 2;
@@ -493,7 +942,7 @@ export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
   add(group, moulding([[Cx - 0.005, Math.min(Cy - 0.05, dTop - 0.085)], [Cx - 0.005, Cy - 0.022], [xB, dTop], [xT + 0.02, dTop], [xT - 0.012, dTop - 0.012], [xT - 0.014, dTop - 0.04], [xT + 0.04, dTop - 0.05], [xB + 0.03, yUnder]], -1.5, 1.5, walls), m.trim);
   // Anti-glare top.
   // (The moulding's 8 mm bevel puts its skin at dTop + 0.008; the cap's top is at dTop + 0.015.)
-  add(group, moulding([[xT + 0.03, dTop + 0.004], [xB - 0.012, dTop + 0.004], [xB - 0.012, dTop + 0.012], [xT + 0.03, dTop + 0.012]], -1.5, 1.5, (x, y) => walls(x, y) - 0.01, 0.003), hm.fascia);
+  add(group, moulding([[xT + 0.03, dTop + 0.004], [xB - 0.012, dTop + 0.004], [xB - 0.012, dTop + 0.012], [xT + 0.03, dTop + 0.012]], -1.5, 1.5, (x, y) => walls(x, y) - 0.01, 0.003), hm.antiglare);
   const yDeck = dTop + 0.013;  // what stands on the dash top is sunk 2 mm into the cap
   // Helm pod: raked face under the brow, underside sweeping forward to the bulkhead.
   const fTop = [xT + 0.03, dTop - 0.04];
@@ -521,10 +970,12 @@ export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
   const key = add(group, new THREE.CylinderGeometry(0.016, 0.018, 0.01, 14), m.stainless);
   key.position.copy(front.at(0.16, Math.min(zw + 0.255, zF1 - 0.07), 0.004));
   key.quaternion.setFromUnitVectors(v3(0, 1, 0), front.n);
-  const wheel = helmWheel(group, m, front.at(0.5, zw, 0), face.tilt);
+  const wheel = helmWheel(group, m, hm, front.at(0.5, zw, 0), face.tilt);
   compass(group, m, xT + 0.12, yDeck, zw);
-  binnacle(group, m, xT + 0.115, yDeck, walls(xT + 0.115, dTop + 0.2) - (twin ? 0.1 : 0.08), twin);
+  binnacle(group, m, hm, xT + 0.115, yDeck, walls(xT + 0.115, dTop + 0.2) - (twin ? 0.1 : 0.08), twin);
   vhfHandset(group, m, v3(xT + 0.04, dTop - 0.25, zIn - 0.008), v3(0, 0, -1));
+  phoneTray(group, m, hm, xT + 0.15, yDeck, zM);
+  for (const dz of [-0.052, 0.052]) cupHolder(group, m, hm, xT + 0.13, yDeck, -zw + dz);
 
   // Passenger grab rail along the port dash.
   const gz0 = -(walls(xT, dTop - 0.1) - 0.1);
@@ -537,8 +988,11 @@ export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
 
   // Helm and passenger seats, cushion front about a third of a metre aft of the wheel rim.
   const seatX = wheel.x - 0.6;
-  pedestalSeat(group, m, hm, seatX, zw);
-  pedestalSeat(group, m, hm, seatX, -zw);
+  // Seats 0.5 m wide with 0.4 m footrest rings need 0.54 m between centres: on the narrow 550
+  // cabin they sit a little outboard of the wheel line rather than touch.
+  const seatZ = Math.max(zw, 0.27);
+  pedestalSeat(group, m, hm, seatX, seatZ);
+  pedestalSeat(group, m, hm, seatX, -seatZ);
 }
 
 // Rounded-top doorway outline in the bulkhead's shape plane (X = -z, Y = y), grown by g.
@@ -584,14 +1038,17 @@ function bulkhead(group, m, x, y0, y1, zAt, door) {
 // ---------- centre console ----------
 
 export function consoleHelm(group, m, { cx0, top, Wc, yTop, postX }, { twin = false } = {}) {
-  const hm = helmMaterials();
+  const hm = helmMaterials(m);
   const yA = yTop(cx0);
   // Instrument pod on the console top, to port of the throttle pad.
   const zP0 = -0.3;
   const zP1 = 0.17;
   const pBot = [cx0 + 0.035, yA + 0.03];
   const pTop = [cx0 + 0.165, yA + 0.215];
-  add(group, moulding([[cx0 + 0.02, yA - 0.03], [cx0 + 0.02, yA + 0.015], pBot, pTop, [cx0 + 0.14, yA + 0.235], [cx0 + 0.16, yA + 0.25], [cx0 + 0.25, yA + 0.25], [cx0 + 0.285, yA + 0.15], [cx0 + 0.285, yA - 0.03]], zP0, zP1), m.trim);
+  // Moulded in one piece: filleted profile, rounded side edges, a soft brow over the fascia.
+  add(group, roundedMoulding(
+    [[cx0 + 0.02, yA - 0.03], [cx0 + 0.02, yA + 0.015], pBot, pTop, [cx0 + 0.14, yA + 0.235], [cx0 + 0.16, yA + 0.25], [cx0 + 0.25, yA + 0.25], [cx0 + 0.285, yA + 0.15], [cx0 + 0.285, yA - 0.03]],
+    [0.002, 0.008, 0.012, 0.008, 0.006, 0.01, 0.05, 0.06, 0.002], zP0, zP1, 0.016), m.trim);
   const face = rakedFace(pBot, pTop, 0.008);
   const front = rakedFace(pBot, pTop, 0.016);
   const fl = (metres) => metres / face.len;
@@ -611,16 +1068,16 @@ export function consoleHelm(group, m, { cx0, top, Wc, yTop, postX }, { twin = fa
   const aft = rakedFace([cx0, DECK_Y], [cx0, yA]);
   const fa = (y) => (y - DECK_Y) / (yA - DECK_Y);
   const zW = -0.01;
-  const pad = add(group, new THREE.CylinderGeometry(0.075, 0.08, 0.02, 20), hm.fascia);
-  pad.position.set(cx0 - 0.004, yA - 0.13, zW);
-  pad.rotation.z = Math.PI / 2;
-  helmWheel(group, m, v3(cx0 - 0.012, yA - 0.13, zW), 0.32);
+  const wheelPad = add(group, new THREE.CylinderGeometry(0.075, 0.08, 0.02, 20), hm.fascia);
+  wheelPad.position.set(cx0 - 0.004, yA - 0.13, zW);
+  wheelPad.rotation.z = Math.PI / 2;
+  helmWheel(group, m, hm, v3(cx0 - 0.012, yA - 0.13, zW), 0.32);
   fascia(group, hm, aft, -0.345, -0.135, fa(yA - 0.31), fa(yA - 0.06));
   const panelFront = rakedFace([cx0, DECK_Y], [cx0, yA], 0.008);
   switchPanel(group, m, hm, panelFront, fa(yA - 0.115), -0.24, 4, 2);
   vhfRadio(group, m, hm, panelFront, fa(yA - 0.255), -0.24);
   const thrZ = Math.min(0.26, Wc / 2 - 0.16);
-  binnacle(group, m, cx0 + 0.11, yTop(cx0 + 0.11) - 0.003, thrZ, twin);
+  binnacle(group, m, hm, cx0 + 0.11, yTop(cx0 + 0.11) - 0.003, thrZ, twin);
   vhfHandset(group, m, v3(cx0 - 0.002, yA - 0.2, thrZ), v3(-1, 0, 0));
   add(group, tube([v3(cx0 + 0.005, DECK_Y + 0.2, -0.28), v3(cx0 - 0.12, DECK_Y + 0.22, -0.25), v3(cx0 - 0.12, DECK_Y + 0.22, 0.25), v3(cx0 + 0.005, DECK_Y + 0.2, 0.28)], 0.0125, 16, 6), m.stainless);
 
@@ -635,19 +1092,39 @@ function leaningPost(group, m, hm, postX) {
   const xp = postX - 0.12;
   const W = 0.72;
   const yBase = DECK_Y + 0.68;
-  const base = add(group, new RoundedBoxGeometry(0.4, yBase - DECK_Y, W, 2, 0.03), m.trim);
-  base.position.set(xp, (DECK_Y + yBase) / 2 - 0.002, 0);
-  // Tackle drawers: three faces with pulls on the aft side.
-  for (const [y, h] of [[DECK_Y + 0.15, 0.12], [DECK_Y + 0.29, 0.12], [DECK_Y + 0.46, 0.17]]) {
-    const face = add(group, new RoundedBoxGeometry(0.014, h, W - 0.12, 1, 0.004), m.dash);
-    face.position.set(xp - 0.2 - 0.001, y + h / 2, 0);
-    rod(group, v3(xp - 0.214, y + h / 2 + 0.02, -0.08), v3(xp - 0.214, y + h / 2 + 0.02, 0.08), 0.006, m.stainless, 6);
+  // Moulded module in the console colour: generous radii, on a toe-kick plinth set in at the aft
+  // face.
+  const yKick = DECK_Y + 0.075;
+  add(group, new RoundedBoxGeometry(0.4, yBase - yKick, W, 4, 0.045), m.trim).position.set(xp, (yKick + yBase) / 2, 0);
+  add(group, new RoundedBoxGeometry(0.33, yKick - DECK_Y + 0.02, W - 0.05, 2, 0.015), m.trim).position.set(xp + 0.03, (DECK_Y + yKick + 0.02) / 2 - 0.002, 0);
+  // Tackle drawers on the aft face: a moulded surround standing 14 mm proud, the drawer faces set
+  // back inside it with a dark shadow gap all round, each with a stainless bar pull on standoffs.
+  const xF = xp - 0.2;                 // module's aft face
+  const zb = W / 2 - 0.075;            // half-width of the drawer bank
+  const drawers = [[DECK_Y + 0.155, 0.13], [DECK_Y + 0.297, 0.13], [DECK_Y + 0.439, 0.165]];
+  const yb0 = drawers[0][0] - 0.008;
+  const yb1 = drawers[2][0] + drawers[2][1] + 0.008;
+  add(group, new RoundedBoxGeometry(0.006, yb1 - yb0, 2 * zb, 1, 0.002), hm.recess, { cast: false }).position.set(xF - 0.002, (yb0 + yb1) / 2, 0);
+  const lip = 0.014;
+  const rail = (y0, y1, z0, z1) => add(group, new RoundedBoxGeometry(lip + 0.004, y1 - y0, z1 - z0, 2, 0.005), m.trim).position.set(xF - lip / 2 + 0.002, (y0 + y1) / 2, (z0 + z1) / 2);
+  const rw = 0.018;
+  rail(yb0 - rw, yb0, -zb - rw, zb + rw);
+  rail(yb1, yb1 + rw, -zb - rw, zb + rw);
+  rail(yb0, yb1, -zb - rw, -zb);
+  rail(yb0, yb1, zb, zb + rw);
+  for (let i = 0; i < drawers.length - 1; i++) rail(drawers[i][0] + drawers[i][1] + 0.001, drawers[i + 1][0] - 0.001, -zb, zb);
+  for (const [y, h] of drawers) {
+    const face = add(group, new RoundedBoxGeometry(0.012, h - 0.008, 2 * zb - 0.012, 2, 0.004), m.trim);
+    face.position.set(xF - 0.001, y + h / 2, 0);
+    const yp = y + h - 0.038;
+    const xpull = xF - 0.034;
+    rod(group, v3(xpull, yp, -0.075), v3(xpull, yp, 0.075), 0.0055, m.stainless, 10);
+    for (const dz of [-0.065, 0.065]) rod(group, v3(xF - 0.006, yp, dz), v3(xpull, yp, dz), 0.0045, m.stainless, 8);
   }
-  // Bolster.
-  const yB = yBase + 0.06;
-  const bolster = add(group, new RoundedBoxGeometry(0.3, 0.13, W - 0.02, 2, 0.055), hm.vinyl);
-  bolster.position.set(xp + 0.03, yB, 0);
-  pipe(group, hm.piping, roundedRect(0.15 - 0.012, (W - 0.02) / 2 - 0.012, 0.04).map(([u, w]) => v3(xp + 0.03 + u, yB + 0.052, w)));
+  // Bolster: upholstered to match the helm seats, a little crown, pleats running fore and aft.
+  placePad(group, hm, pad(0.3, W - 0.02, 0.12, {
+    rh: 0.05, rv: 0.05, rb: 0.012, crown: 0.012, dish: 0.012, panel: [0.6, 0.7], channels: 6, seamAxis: 'z', piping: true,
+  }), v3(xp + 0.03, yBase - 0.006, 0));
   // Frame: uprights from the module's aft corners up to the top rail, then across.
   const xr = postX - 0.3;
   const yr = DECK_Y + 1.26;
@@ -659,9 +1136,14 @@ function leaningPost(group, m, hm, postX) {
   rod(group, v3(xr, yr, -0.275), v3(xr, yr, 0.275), 0.016, m.stainless);
   // Backrest pad on the uprights.
   const lean = Math.atan2(xp - 0.175 - xr, yr - 0.05 - yBase - 0.3);
-  const back = add(group, new RoundedBoxGeometry(0.08, 0.3, W - 0.12, 2, 0.035), hm.vinyl);
-  back.position.set(lerp(xp - 0.175, xr, 0.5) + 0.06, (yBase + 0.3 + yr - 0.05) / 2, 0);
-  back.rotation.z = lean;
+  // (pad +y, its face, turned to point forward along (cos lean, sin lean); centred where the old
+  // box was.)
+  const backC = v3(lerp(xp - 0.175, xr, 0.5) + 0.06, (yBase + 0.3 + yr - 0.05) / 2, 0);
+  const tB = 0.075;
+  const backPos = backC.clone().add(v3(-tB / 2 * Math.cos(lean), -tB / 2 * Math.sin(lean), 0));
+  placePad(group, hm, pad(0.3, W - 0.12, tB, {
+    rh: 0.035, rv: 0.035, rb: 0.012, crown: 0.01, panel: [0.6, 0.7], channels: 3, seamAxis: 'x', piping: true,
+  }), backPos, lean - Math.PI / 2);
   // Rod holders: two a side on the module's outboard faces, raked about 15 degrees aft and 10
   // outboard, each held off the face by two clamp blocks with a band round the tube. They stand
   // clear of the bolster (z 0.35), the frame uprights (z 0.3) and the backrest.
