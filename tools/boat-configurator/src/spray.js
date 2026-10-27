@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SUN_DIR } from './water.js';
+import { SUN_DIR, noiseChunk } from './water.js';
 
 // Spray off the planing hull, simulated on the CPU as soft points in the boat's frame (the boat
 // holds still and the sea streams aft past it at the cruising speed):
@@ -9,6 +9,8 @@ import { SUN_DIR } from './water.js';
 // Most points are droplets; a share are large faint mist puffs that swell as they drift.
 //   createSpray({ count })  -> { points, setRig(rig), warm(boat, speed), update(dt, boat, speed), setScale(px) }
 //   setRig({ chine: [[x, y, z, weight]...], props: [[x, z]...] }) in boat coordinates.
+//   createWhiteWater()      the white water piled against each side, from under the chine out
+//                           onto the sea, so a profile view shows the hull pressing into it
 
 const GRAVITY = 9.8;
 
@@ -181,4 +183,83 @@ export function createSpray({ count = 2400 } = {}) {
       material.uniforms.uScale.value = scale;
     },
   };
+}
+
+// ---------- white water against the hull, underway ----------
+
+// Two ribbons in world space, one a side, from the spray root aft past the transom. Each runs
+// from just under the chine edge (inner, uv.y = 0) down and out to the sea (outer, uv.y = 1);
+// uv.x runs from the spray root (0) to the ribbon's end astern (1). Foam streams aft through
+// it at the cruising speed. build(rows) takes, per station, [inner xyz, outer xyz] pairs for
+// the starboard side (the port ribbon mirrors it).
+export function createWhiteWater() {
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      uFlow: { value: 0 },
+      uTime: { value: 0 },
+      uSunDir: { value: SUN_DIR.clone() },
+      uSunColor: { value: new THREE.Color('#ffc58a') },
+    },
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      varying vec3 vWorld;
+      void main() {
+        vUv = uv;
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vWorld = w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }`,
+    fragmentShader: /* glsl */ `
+      ${noiseChunk}
+      uniform float uFlow;
+      uniform float uTime;
+      uniform vec3 uSunDir;
+      uniform vec3 uSunColor;
+      varying vec2 vUv;
+      varying vec3 vWorld;
+      void main() {
+        vec2 q = vWorld.xz + vec2(uFlow, 0.0);
+        float n = fbm(q * vec2(1.1, 3.5) + vec2(0.0, uTime * 0.3));
+        float grain = vnoise(q * vec2(6.0, 11.0) - vec2(uTime * 0.8, 0.0));
+        // Dense against the hull, breaking into lace towards the sea and at both ends.
+        // The ragged edges come from the noise, not the ribbon's straight outline.
+        float body = smoothstep(1.0, 0.1, vUv.y + (n - 0.45) * 0.5) * smoothstep(0.0, 0.25, vUv.x) * smoothstep(1.0, 0.65, vUv.x);
+        float a = smoothstep(0.86 - 0.5 * body, 1.0 - 0.5 * body, n * 0.75 + grain * 0.35);
+        vec3 col = vec3(0.86, 0.9, 0.92) * (0.85 + 0.5 * max(uSunDir.y + 0.3, 0.0)) * mix(vec3(1.0), uSunColor, 0.18);
+        gl_FragColor = vec4(col, a * body * 0.85);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+  });
+  const mesh = new THREE.Mesh(new THREE.BufferGeometry(), material);
+  mesh.frustumCulled = false;
+  mesh.visible = false;
+  function build(rows) {
+    const n = rows.length;
+    const position = new Float32Array(n * 4 * 3);
+    const uv = new Float32Array(n * 4 * 2);
+    const index = [];
+    // Vertices per station: starboard inner, starboard outer, port inner, port outer.
+    rows.forEach(([inner, outer], i) => {
+      const u = i / (n - 1);
+      position.set([inner[0], inner[1], inner[2], outer[0], outer[1], outer[2], inner[0], inner[1], -inner[2], outer[0], outer[1], -outer[2]], i * 12);
+      uv.set([u, 0, u, 1, u, 0, u, 1], i * 8);
+      if (i < n - 1) {
+        for (const side of [0, 2]) {
+          const a = i * 4 + side;
+          const b = a + 4;
+          index.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+      }
+    });
+    mesh.geometry.dispose();
+    mesh.geometry = new THREE.BufferGeometry();
+    mesh.geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    mesh.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    mesh.geometry.setIndex(index);
+  }
+  return { mesh, build };
 }

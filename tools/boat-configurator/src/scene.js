@@ -4,8 +4,8 @@ import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { resolve } from './config.js';
 import { createMaterials, applyBuild } from './materials.js';
 import { buildBoat, disposeTree, TRAILER_LIFT, CRADLE_LIFT } from './boat/index.js';
-import { createSky, createWater, createWhiteWater, createUnderwater, waterlineUniforms, wetMaterial, SUN_DIR, WL_STATIONS } from './water.js';
-import { createSpray } from './spray.js';
+import { createSky, createWater, createUnderwater, waterlineUniforms, wetMaterial, SUN_DIR, WL_STATIONS } from './water.js';
+import { createSpray, createWhiteWater } from './spray.js';
 
 // Renderer, environments, lights, studio floor and contact shadow, sky and water, the boat's
 // place in the scene (running trim and motion), the water reflection pass and the render loop.
