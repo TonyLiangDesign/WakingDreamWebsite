@@ -51,26 +51,9 @@ export const OPTIONS = [
   { id: 'trailer', name: 'Braked trailer', note: 'Galvanised, tandem rollers, shown in the studio', price: 9800 },
 ];
 
-// Fictional dealer network for the buyer-side quote step. Nothing is sent to them.
-export const DEALERS = [
-  { id: 'nl', region: 'Northland', name: 'Harbour Boats Northland', town: 'Whangārei' },
-  { id: 'ak', region: 'Auckland', name: 'Harbour Boats Auckland', town: 'Westhaven' },
-  { id: 'wb', region: 'Waikato and Bay of Plenty', name: 'Harbour Boats Bay', town: 'Tauranga' },
-  { id: 'wn', region: 'Wellington', name: 'Harbour Boats Wellington', town: 'Petone' },
-  { id: 'cb', region: 'Canterbury', name: 'Harbour Boats Canterbury', town: 'Christchurch' },
-  { id: 'os', region: 'Otago and Southland', name: 'Harbour Boats South', town: 'Invercargill' },
-];
-
-// Builder setting: how much price the public page shows. Dealers always get the full figure.
-export const PRICE_MODES = [
-  { id: 'full', name: 'Full RRP', note: 'Total and line-by-line breakdown' },
-  { id: 'from', name: '“From” price', note: 'Base hull price only' },
-  { id: 'none', name: 'No prices', note: 'Quote on request' },
-];
-
 export const DEFAULT_BUILD = {
   model: '620', layout: 'ht', hull: 'navy', trim: 'white', engine: '250', cowling: 'white',
-  options: ['bowrail', 'rocket', 'trailer'], scene: 'studio', price: 'full', dealer: '', kiosk: false,
+  options: ['bowrail', 'rocket', 'trailer'], scene: 'studio', kiosk: false,
 };
 
 const byId = (list, id) => list.find((item) => item.id === id);
@@ -92,9 +75,9 @@ export function normalise(build) {
   if (!byId(TRIM_COLOURS, b.trim)) b.trim = DEFAULT_BUILD.trim;
   if (!byId(COWLINGS, b.cowling)) b.cowling = DEFAULT_BUILD.cowling;
   if (b.scene !== 'water') b.scene = 'studio';
-  if (!byId(PRICE_MODES, b.price)) b.price = 'full';
-  if (!byId(DEALERS, b.dealer)) b.dealer = '';
   b.kiosk = Boolean(b.kiosk);
+  delete b.dealer;
+  delete b.price;
   const model = byId(MODELS, b.model);
   const engine = byId(ENGINES, b.engine);
   if (!engine || !engineAllowed(model, engine)) {
@@ -114,7 +97,6 @@ export function resolve(build) {
     engine: byId(ENGINES, build.engine),
     cowling: byId(COWLINGS, build.cowling),
     options: OPTIONS.filter((o) => build.options.includes(o.id)),
-    dealer: byId(DEALERS, build.dealer) || null,
   };
 }
 
@@ -131,28 +113,13 @@ export function lineItems(build) {
   return { items, total: items.reduce((sum, item) => sum + item.price, 0) };
 }
 
-export function specText(build) {
-  const r = resolve(build);
-  const extras = r.options.map((o) => o.name).join(', ') || 'none';
-  return `${r.model.name} ${r.layout.name} · ${r.hull.name} hull · ${r.trim.name} trim · ${r.engine.name} (${r.cowling.name}) · Options: ${extras} · ${nzd(lineItems(build).total)}`;
-}
-
-// What the public page shows for a price under the current builder setting.
-export function shownTotal(build) {
-  const total = lineItems(build).total;
-  if (build.price === 'none') return 'Price on request';
-  if (build.price === 'from') return `From ${nzd(resolve(build).model.price)}`;
-  return nzd(total);
-}
-
 export const nzd = (value) => new Intl.NumberFormat('en-NZ', { style: 'currency', currency: 'NZD', maximumFractionDigits: 0 }).format(value);
 
 export function toHash(build) {
   const p = new URLSearchParams({
     m: build.model, l: build.layout, h: build.hull, t: build.trim, e: build.engine, c: build.cowling,
-    o: build.options.join('.'), s: build.scene, p: build.price,
+    o: build.options.join('.'), s: build.scene,
   });
-  if (build.dealer) p.set('d', build.dealer);
   if (build.kiosk) p.set('kiosk', '1');
   return `#${p.toString()}`;
 }
@@ -163,6 +130,6 @@ export function fromHash(hash) {
   return normalise({
     model: p.get('m'), layout: p.get('l'), hull: p.get('h'), trim: p.get('t'), engine: p.get('e'), cowling: p.get('c'),
     options: (p.get('o') || '').split('.').filter(Boolean), scene: p.get('s'),
-    price: p.get('p'), dealer: p.get('d'), kiosk: p.get('kiosk') === '1',
+    kiosk: p.get('kiosk') === '1',
   });
 }

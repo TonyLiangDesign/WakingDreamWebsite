@@ -9,9 +9,9 @@
   <link rel="preload" href="/boat-configurator/assets/montserrat-normal-latin-Dk9Pm7OY.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="/boat-configurator/assets/montserrat-italic-latin-5a10_2AF.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="icon" href="data:," />
-  <script type="module" crossorigin src="/boat-configurator/assets/index-BAd7vRgy.js"></script>
+  <script type="module" crossorigin src="/boat-configurator/assets/index-DFy0X0Nz.js"></script>
   <link rel="modulepreload" crossorigin href="/boat-configurator/assets/vendor-D97QPkc7.js">
-  <link rel="stylesheet" crossorigin href="/boat-configurator/assets/index-BvdJ_J_d.css">
+  <link rel="stylesheet" crossorigin href="/boat-configurator/assets/index-DWeVVidV.css">
 </head>
 <body>
   <header class="topbar">
@@ -24,7 +24,7 @@
         <li><a href="/about/">About</a></li>
       </ul>
     </nav>
-    <button type="button" class="pill kiosk-exit" id="kiosk-exit">Exit kiosk</button>
+    <button type="button" class="pill kiosk-exit" id="kiosk-exit">Exit presentation</button>
   </header>
 
   <main class="cfg">
@@ -52,19 +52,12 @@
         <button type="button" data-view="top" aria-pressed="false">Plan</button>
       </nav>
       <p class="stage-hint">Drag to turn · Scroll or pinch to zoom</p>
-      <button type="button" id="attract" hidden>Touch to build your boat</button>
+      <button type="button" id="attract" hidden>Touch to customise</button>
       <div id="loading"><span>Building your boat…</span></div>
       <noscript><p class="stage-hint">This configurator needs JavaScript.</p></noscript>
     </section>
 
     <aside class="panel">
-      <details class="builder" open>
-        <summary><span class="builder-tag">Builder settings · demo</span> <span class="builder-what">What your buyers see</span></summary>
-        <p class="builder-note">Set once by the builder, never shown to buyers. Dealers always receive the full price.</p>
-        <div class="seg" role="radiogroup" aria-label="Price display" id="opt-price"></div>
-        <button type="button" class="link-button" id="kiosk-toggle">Boat-show kiosk mode</button>
-      </details>
-
       <form id="config" class="steps" onsubmit="return false">
         <fieldset class="step">
           <legend><span class="step-n">01</span>Model</legend>
@@ -94,82 +87,25 @@
       </form>
 
       <section class="summary" aria-live="polite">
-        <div class="total"><span id="total-label">Estimated price</span><strong id="total"></strong></div>
+        <div class="total"><span id="total-label">Demo total</span><strong id="total"></strong></div>
         <details id="breakdown">
           <summary id="breakdown-label">Price breakdown</summary>
           <ul id="lines"></ul>
         </details>
-        <button type="button" class="btn btn-accent btn-wide" id="to-quote">Get a quote from your dealer</button>
         <div class="actions">
           <button type="button" class="btn" id="copy-link">Copy link</button>
           <button type="button" class="btn" id="save-image">Save image</button>
           <button type="button" class="btn" id="spec-sheet">Spec sheet</button>
         </div>
-        <button type="button" class="link-button" id="reset">Start again</button>
-        <p class="fine" id="price-fine">Demo pricing in NZD including GST. The Harbour series is a fictional boat built to show the configurator.</p>
+        <div class="secondary-actions">
+          <button type="button" class="link-button" id="reset">Start again</button>
+          <button type="button" class="link-button" id="kiosk-toggle">Presentation mode</button>
+        </div>
+        <p class="fine" id="price-fine">Illustrative pricing in NZD incl. GST. A fictional boat for exploring 3D customisation.</p>
       </section>
 
-      <form id="quote" class="steps quote" novalidate>
-        <fieldset class="step">
-          <legend><span class="step-n">06</span>Your dealer</legend>
-          <p class="sub">Choose your region. Your build goes to the nearest dealer for a quote.</p>
-          <div class="cards cards-2" id="opt-dealer"></div>
-          <div class="form quote-fields">
-            <label for="q-name">Name</label>
-            <input id="q-name" autocomplete="name" required />
-            <label for="q-email">Email</label>
-            <input id="q-email" type="email" autocomplete="email" required />
-            <label for="q-phone">Phone</label>
-            <input id="q-phone" type="tel" autocomplete="tel" />
-            <p class="quote-error" id="quote-error" role="alert" hidden></p>
-            <button class="btn btn-accent" type="submit">Get a quote from your dealer</button>
-            <p class="fine">Demo: nothing is sent. You'll see the lead a dealer would receive.</p>
-          </div>
-        </fieldset>
-      </form>
-
-      <section class="pitch">
-        <p class="eyebrow">For New Zealand boat builders</p>
-        <h2>Leads that arrive with the boat already specced.</h2>
-        <p>Buyers build the boat they want in live 3D, then ask the dealer in their region for a quote. Each lead carries the full spec, price and a build link, so your dealer can quote on the spot and you can follow it through to a sale.</p>
-        <ul class="pitch-points">
-          <li><b>One 3D model, many uses.</b> The same asset gives you renders for brochures, ads and boat-show screens.</li>
-          <li><b>Modelled from what you have.</b> CAD files, drawings or good photos of the boat.</li>
-          <li><b>Fits your current site.</b> It embeds in your website and quote form and works alongside your web agency.</li>
-          <li><b>You set the pricing.</b> Show RRP, a “from” price or no price at all, to suit your dealers.</li>
-          <li><b>Start small.</b> Begin with a single-model pilot and add the range once it earns its keep.</li>
-        </ul>
-        <form class="form" action="https://formsubmit.co/tony@wakingdream.co.nz" method="post">
-          <input type="hidden" name="_subject" value="Boat configurator enquiry" />
-          <input type="hidden" name="_captcha" value="false" />
-          <input type="hidden" name="_template" value="table" />
-          <input type="hidden" name="product" value="Boat configurator" />
-          <input type="hidden" name="_next" value="https://wakingdream.co.nz/thank-you.html?p=boat" />
-          <input type="hidden" name="build" id="build-field" />
-          <label for="name">Name</label>
-          <input id="name" name="name" autocomplete="name" required />
-          <label for="company">Boat builder or dealership</label>
-          <input id="company" name="company" autocomplete="organization" />
-          <label for="email">Email</label>
-          <input id="email" name="email" type="email" autocomplete="email" required />
-          <button class="btn btn-accent" type="submit">Talk to us</button>
-        </form>
-      </section>
     </aside>
   </main>
-
-  <dialog id="lead" aria-labelledby="lead-title">
-    <div class="lead-head">
-      <p class="eyebrow">Demo · nothing was sent</p>
-      <h2 id="lead-title">This is the lead your dealer receives</h2>
-      <p class="fine">In a live install it lands in the dealer's inbox and your CRM, with a lead ID you can track to a sale.</p>
-    </div>
-    <div class="lead-card" id="lead-card"></div>
-    <div class="actions">
-      <button type="button" class="btn" id="lead-copy">Copy lead</button>
-      <button type="button" class="btn btn-accent" id="lead-close">Close</button>
-    </div>
-  </dialog>
 
   <section id="sheet" class="sheet" hidden aria-label="Spec sheet">
     <div class="sheet-bar">

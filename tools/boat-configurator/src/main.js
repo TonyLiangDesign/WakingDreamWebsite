@@ -1,6 +1,6 @@
 import {
-  MODELS, LAYOUTS, HULL_COLOURS, TRIM_COLOURS, ENGINES, COWLINGS, OPTIONS, DEALERS, PRICE_MODES,
-  engineAllowed, optionAllowed, normalise, resolve, lineItems, specText, shownTotal, nzd, toHash, fromHash,
+  MODELS, LAYOUTS, HULL_COLOURS, TRIM_COLOURS, ENGINES, COWLINGS, OPTIONS,
+  engineAllowed, optionAllowed, normalise, resolve, lineItems, nzd, toHash, fromHash,
 } from './config.js';
 import { reduceMotion, stage, mountBoat, resizeRenderer, renderFrame, snapshot, startLoop, revealLit, seaReady, loadSea, qaCompileHandles } from './scene.js';
 import { qaHold, camera, controls, flyTo, startSpin, rigChanged, resizeCamera, stepCamera, specShot, rigOnScreen } from './camera.js';
@@ -8,7 +8,7 @@ import './style.css';
 import './fonts.css';
 import { refreshDecalFonts } from './boat/hull.js';
 
-// UI wiring only: options panel, price modes, dealer quote, spec sheet, kiosk. The 3D side is
+// UI wiring only: options panel, demo pricing, spec sheet and presentation mode. The 3D side is
 // scene.js (world, boat, water, loop) and camera.js (views and framing).
 
 let build = fromHash(location.hash);
@@ -34,7 +34,6 @@ function chip(item) {
 }
 
 function renderControls() {
-  $('#opt-price').innerHTML = PRICE_MODES.map((p) => radio('price', p, `<span class="seg-name">${p.name}</span><span class="seg-note">${p.note}</span>`)).join('');
   $('#opt-model').innerHTML = MODELS.map((m) => radio('model', m, `<span class="card-title">${m.name}</span><span class="card-meta">${m.length.toFixed(1)} m<span class="price price-from"> · from ${nzd(m.price)}</span></span>`, 'card')).join('');
   $('#opt-layout').innerHTML = LAYOUTS.map((l) => radio('layout', l, `<span class="card-title">${l.name}</span><span class="card-meta">${l.note}</span><span class="card-price price">${l.price ? `+${nzd(l.price)}` : 'Included'}</span>`, 'card')).join('');
   $('#opt-hull').innerHTML = HULL_COLOURS.map((c) => radio('hull', c, `${chip(c)}<span class="sr">${c.name}</span>`, 'swatch')).join('');
@@ -42,7 +41,6 @@ function renderControls() {
   $('#opt-engine').innerHTML = ENGINES.map((e) => radio('engine', e, `<span class="row-name">${e.name}</span><span class="row-note" data-note="${e.id}"></span><span class="row-price price">${nzd(e.price)}</span>`, 'row')).join('');
   $('#opt-cowling').innerHTML = COWLINGS.map((c) => radio('cowling', c, `${chip(c)}<span class="sr">${c.name}</span>`, 'swatch')).join('');
   $('#opt-options').innerHTML = OPTIONS.map((o) => `<label class="row"><input type="checkbox" name="options" value="${o.id}"><span class="row-name">${o.name}</span><span class="row-note">${o.note}</span><span class="row-price price">+${nzd(o.price)}</span></label>`).join('');
-  $('#opt-dealer').innerHTML = DEALERS.map((d) => radio('dealer', d, `<span class="card-title">${d.region}</span><span class="card-meta">${d.name}, ${d.town}</span>`, 'card')).join('');
   for (const label of document.querySelectorAll('.swatch')) label.title = label.querySelector('.sr').textContent;
 }
 
@@ -72,25 +70,17 @@ function syncControls() {
 
   $('#model-name').textContent = `${r.model.name} ${r.layout.name}`;
   $('#model-dims').textContent = `${r.model.length.toFixed(1)} m · ${r.model.beam.toFixed(1)} m beam · ${r.engine.name}`;
-  const { items } = lineItems(build);
-  const full = build.price === 'full';
-  document.body.dataset.price = build.price;
-  for (const input of document.querySelectorAll('input[name="price"]')) input.checked = input.value === build.price;
-  for (const input of document.querySelectorAll('input[name="dealer"]')) input.checked = input.value === build.dealer;
-  $('#total-label').textContent = { full: 'Estimated price', from: 'Priced from', none: 'Price' }[build.price];
-  $('#total').textContent = build.price === 'none' ? 'Quote on request' : build.price === 'from' ? nzd(r.model.price) : shownTotal(build);
-  $('#breakdown-label').textContent = full ? 'Price breakdown' : 'Your spec';
-  $('#lines').innerHTML = items.map((i) => `<li><span>${i.label}</span>${full ? `<span>${i.price ? nzd(i.price) : 'Included'}</span>` : ''}</li>`).join('');
-  $('#price-fine').textContent = `${full ? 'Demo pricing in NZD including GST.' : build.price === 'from' ? 'Base hull price in NZD including GST; your dealer quotes the full build.' : 'Your dealer quotes the full build.'} The Harbour series is a fictional boat built to show the configurator.`;
+  const { items, total } = lineItems(build);
+  $('#total').textContent = nzd(total);
+  $('#lines').innerHTML = items.map((i) => `<li><span>${i.label}</span><span>${i.price ? nzd(i.price) : 'Included'}</span></li>`).join('');
   document.body.classList.toggle('kiosk', build.kiosk);
-  $('#kiosk-toggle').textContent = build.kiosk ? 'Exit kiosk mode' : 'Boat-show kiosk mode';
+  $('#kiosk-toggle').textContent = build.kiosk ? 'Exit presentation' : 'Presentation mode';
   for (const button of document.querySelectorAll('[data-scene]')) button.setAttribute('aria-pressed', String(button.dataset.scene === build.scene));
   // The water shows once its chunk has loaded and compiled (scene.js); the button says so.
   const waitingForSea = build.scene === 'water' && !seaReady();
   document.querySelector('[data-scene="water"]').toggleAttribute('aria-busy', waitingForSea);
   if (waitingForSea) loadSea().then(syncControls);
   $('#scene-note').hidden = !(build.scene === 'water' && build.options.includes('trailer'));
-  $('#build-field').value = `${specText(build)} · ${location.origin}${location.pathname}${toHash(build)}`;
   history.replaceState(null, '', toHash(build));
 }
 
@@ -136,27 +126,7 @@ addEventListener('hashchange', () => {
   view('hero');
 });
 
-$('.builder').addEventListener('change', (event) => {
-  build = normalise({ ...build, price: event.target.value });
-  syncControls();
-});
-
-// ---------- buyer quote: dealer step and the lead it produces (demo, never sent) ----------
-
-const quote = $('#quote');
-const lead = $('#lead');
-let lastLead = '';
-
-quote.addEventListener('change', (event) => {
-  if (event.target.name !== 'dealer') return;
-  build = normalise({ ...build, dealer: event.target.value });
-  syncControls();
-});
-
-$('#to-quote').addEventListener('click', () => {
-  quote.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
-  setTimeout(() => (build.dealer ? $('#q-name') : quote.querySelector('input[name="dealer"]')).focus({ preventScroll: true }), reduceMotion ? 0 : 600);
-});
+// ---------- shareable configuration ----------
 
 const esc = (text) => String(text).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
@@ -174,57 +144,6 @@ function specRows(b) {
 
 const buildLink = () => `${location.origin}${location.pathname}${toHash({ ...build, kiosk: false })}`;
 
-quote.addEventListener('submit', (event) => {
-  event.preventDefault();
-  const name = $('#q-name').value.trim();
-  const email = $('#q-email').value.trim();
-  const phone = $('#q-phone').value.trim();
-  const error = !build.dealer ? 'Choose your region first.' : !name ? 'Add your name.' : !email || !$('#q-email').checkValidity() ? 'Add a valid email address.' : '';
-  $('#quote-error').textContent = error;
-  $('#quote-error').hidden = !error;
-  if (error) return;
-
-  const r = resolve(build);
-  const { items, total } = lineItems(build);
-  const id = `HB-${Date.now().toString(36).slice(-5).toUpperCase()}`;
-  const when = new Intl.DateTimeFormat('en-NZ', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date());
-  const rows = [
-    ['Lead', `${id} · ${when}`],
-    ['Dealer', `${r.dealer.name}, ${r.dealer.town} (${r.dealer.region})`],
-    ['Buyer', [name, email, phone].filter(Boolean).join(' · ')],
-    ...specRows(build),
-    ['Price', `${nzd(total)} RRP incl. GST`],
-    ['Buyer saw', build.price === 'full' ? 'Full price' : shownTotal(build)],
-    ['Source', 'Website configurator'],
-    ['Build link', buildLink()],
-  ];
-  $('#lead-card').innerHTML = `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${k === 'Build link' ? `<a href="${esc(v)}">${esc(v)}</a>` : esc(v)}</dd>`).join('')}</dl>
-    <details><summary>Price breakdown</summary><ul>${items.map((i) => `<li><span>${esc(i.label)}</span><span>${i.price ? nzd(i.price) : 'Included'}</span></li>`).join('')}</ul></details>`;
-  lastLead = rows.map(([k, v]) => `${k}: ${v}`).join('\n');
-  lead.showModal();
-});
-
-// Clear the buyer's details once they've seen the lead, so a shared show tablet keeps nothing.
-function forgetBuyer() {
-  quote.reset();
-  syncControls();
-}
-$('#lead-close').addEventListener('click', () => {
-  lead.close();
-  forgetBuyer();
-});
-lead.addEventListener('close', forgetBuyer);
-$('#lead-copy').addEventListener('click', async (event) => {
-  const button = event.currentTarget;
-  try {
-    await navigator.clipboard.writeText(lastLead);
-    button.textContent = 'Copied';
-  } catch {
-    button.textContent = 'Copy failed';
-  }
-  setTimeout(() => { button.textContent = 'Copy lead'; }, 2000);
-});
-
 // ---------- printable spec sheet ----------
 
 const sheet = $('#sheet');
@@ -233,16 +152,14 @@ $('#spec-sheet').addEventListener('click', () => {
   const r = resolve(build);
   const { items, total } = lineItems(build);
   const img = specShot().toDataURL('image/jpeg', 0.9);
-  const price = build.price === 'full'
-    ? `<table class="sheet-prices">${items.map((i) => `<tr><td>${esc(i.label)}</td><td>${i.price ? nzd(i.price) : 'Included'}</td></tr>`).join('')}<tr class="sheet-total"><td>Estimated price</td><td>${nzd(total)}</td></tr></table>`
-    : `<p class="sheet-total-line"><span>${build.price === 'from' ? 'Priced from' : 'Price'}</span><strong>${build.price === 'from' ? nzd(r.model.price) : 'Quote on request'}</strong></p>`;
+  const price = `<table class="sheet-prices">${items.map((i) => `<tr><td>${esc(i.label)}</td><td>${i.price ? nzd(i.price) : 'Included'}</td></tr>`).join('')}<tr class="sheet-total"><td>Demo total</td><td>${nzd(total)}</td></tr></table>`;
   $('#sheet-page').innerHTML = `
     <header class="sheet-head"><p class="eyebrow">Harbour series · Spec sheet</p><h1>${esc(r.model.name)} ${esc(r.layout.name)}</h1><p class="mono">${new Intl.DateTimeFormat('en-NZ', { dateStyle: 'long' }).format(new Date())}</p></header>
     <img src="${img}" alt="${esc(r.model.name)} ${esc(r.layout.name)} as configured" />
-    <table class="sheet-spec">${specRows(build).map(([k, v]) => `<tr><th>${k}</th><td>${esc(v)}</td></tr>`).join('')}${r.dealer ? `<tr><th>Dealer</th><td>${esc(r.dealer.name)}, ${esc(r.dealer.town)}</td></tr>` : ''}</table>
+    <table class="sheet-spec">${specRows(build).map(([k, v]) => `<tr><th>${k}</th><td>${esc(v)}</td></tr>`).join('')}</table>
     ${price}
     <p class="sheet-link">Open this build: <a href="${esc(buildLink())}">${esc(buildLink())}</a></p>
-    <p class="sheet-fine">${build.price === 'full' ? 'Demo pricing in NZD including GST. ' : 'Your dealer quotes the full build. '}The Harbour series is a fictional boat built by Waking Dream Technology to show the configurator.</p>`;
+    <p class="sheet-fine">Illustrative pricing in NZD incl. GST. A fictional boat by Waking Dream Technology for exploring 3D customisation.</p>`;
   sheet.hidden = false;
   document.body.classList.add('sheet-open');
   $('#sheet-print').focus();
@@ -278,13 +195,11 @@ function setKiosk(on) {
 $('#kiosk-toggle').addEventListener('click', () => setKiosk(!build.kiosk));
 $('#kiosk-exit').addEventListener('click', () => setKiosk(false));
 
-// Back to the default boat with the builder's settings, slowly turning and cycling paint.
+// Return to the default boat, slowly turning and cycling paint.
 function startAttract() {
   attracting = true;
-  if (lead.open) lead.close();
   closeSheet();
-  quote.reset();
-  build = normalise({ ...fromHash(''), price: build.price, kiosk: true });
+  build = normalise({ ...fromHash(''), kiosk: true });
   syncControls();
   rebuild();
   view('hero');
@@ -343,8 +258,7 @@ $('#save-image').addEventListener('click', () => {
 });
 
 $('#reset').addEventListener('click', () => {
-  build = normalise({ ...fromHash(''), price: build.price, kiosk: build.kiosk });
-  quote.reset();
+  build = normalise({ ...fromHash(''), kiosk: build.kiosk });
   syncControls();
   rebuild();
   view('hero');
@@ -385,8 +299,6 @@ function resize() {
 const stageObserver = new ResizeObserver(resize);
 for (const el of [stage, $('.stage-top'), $('.stage-views'), attract]) stageObserver.observe(el);
 
-// Phones open straight onto the boat; builder settings stay one tap away.
-if (matchMedia('(max-width: 979px)').matches) $('.builder').open = false;
 renderControls();
 syncControls();
 // Font downloads must never hold up the boat. Refit text overlays and repaint its lettering
