@@ -3,7 +3,7 @@ import {
   engineAllowed, optionAllowed, normalise, resolve, lineItems, specText, shownTotal, nzd, toHash, fromHash,
 } from './config.js';
 import { reduceMotion, stage, mountBoat, resizeRenderer, renderFrame, snapshot, startLoop } from './scene.js';
-import { camera, controls, flyTo, startSpin, rigChanged, resizeCamera, stepCamera, specShot, rigOnScreen } from './camera.js';
+import { qaHold, camera, controls, flyTo, startSpin, rigChanged, resizeCamera, stepCamera, specShot, rigOnScreen } from './camera.js';
 import './style.css';
 
 // UI wiring only: options panel, price modes, dealer quote, spec sheet, kiosk. The 3D side is
@@ -399,6 +399,9 @@ document.fonts.ready.then(() => {
   startLoop(camera, controls, stepCamera);
   started = true;
   requestAnimationFrame(() => $('#loading').classList.add('done'));
+  // ?qaCam=px,py,pz,tx,ty,tz parks the camera (world metres) for close-up QA shots.
+  const qaCam = (params.get('qaCam') || '').split(',').map(Number);
+  if (qaCam.length === 6 && qaCam.every(Number.isFinite)) qaHold(qaCam.slice(0, 3), qaCam.slice(3));
   if (qaScroll) scrollTo(0, qaScroll);
   if (qaView || qaScroll) setInterval(() => { document.body.dataset.qaFrame = JSON.stringify(rigOnScreen()); }, 250);
 });

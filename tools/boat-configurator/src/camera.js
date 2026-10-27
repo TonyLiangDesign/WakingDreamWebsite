@@ -20,6 +20,7 @@ let framed = null;   // the preset the camera is holding, or null once the buyer
 let flight = null;
 let spin = null;     // auto-rotate fits, one per heading
 let lastStep = 0;
+let qaHeld = false;  // ?qaCam close-up: no limits, no refits
 
 export const camera = new THREE.PerspectiveCamera(FOV, 1, 0.1, 4000);
 camera.position.set(5.6, 2.6, 6.4);
@@ -225,6 +226,7 @@ export function viewTargets(name, { aspect, area } = {}) {
 
 // Zoom limits from the rig: never inside its bounding sphere, never so far it is a speck.
 function setLimits() {
+  if (qaHeld) return;
   let far = 0;
   for (const e of spinTable().table) far = Math.max(far, e.d);
   for (const name of Object.keys(VIEWS)) {
@@ -308,6 +310,19 @@ export function resizeCamera(aspect, insets) {
   } else {
     startFlight(to, 0);
   }
+}
+
+// QA close-ups (?qaCam=): park the camera at a world position and target and keep it there.
+export function qaHold(pos, target) {
+  qaHeld = true;
+  framed = null;
+  flight = null;
+  controls.autoRotate = false;
+  controls.minDistance = 0.05;
+  controls.maxDistance = 1000;
+  camera.position.set(...pos);
+  controls.target.set(...target);
+  controls.update();
 }
 
 // ---------- per frame ----------
