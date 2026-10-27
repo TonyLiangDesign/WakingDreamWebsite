@@ -3,8 +3,9 @@ import { add, tube, rod, loft, spaced, v3, lerp, clamp01, extrudeProfile } from 
 
 // Outboards: one generic four-stroke built by outboard(), mounted single or twin on the engine
 // pod by outboards(). Receives the materials and the anchors from cockpit(); builds into group.
-// The engine is a generic shape with no maker's styling: rounded cowl with a split line and
-// intakes, stern brackets bolted to the pod face, power trim and tilt with chrome rams, a
+// The engine is a generic shape with no maker's styling: a sculpted, crowned top cowl with a
+// character line along each side, small slanted intake louvres at its aft shoulders and a small
+// rating label, a sealed split line over a lower cowl in a neutral tone, stern brackets bolted to the pod face, power trim and tilt with chrome rams, a
 // hydraulic steering cylinder on the tilt tube, rigging boot into the transom, airfoil
 // midsection, anti-ventilation plate, gearcase, skeg, trim-tab anode and a 3-blade stainless prop.
 // Engine-local frame: x = 0 is the cockpit's pod anchor (aft is -x, so the distance aft of it is
@@ -14,24 +15,30 @@ import { add, tube, rod, loft, spaced, v3, lerp, clamp01, extrudeProfile } from 
 const own = {};
 function ownMaterials(m) {
   if (!own.cowl) {
-    // Painted cowl under a clear coat: a soft sheen rather than a mirror.
-    own.cowl = new THREE.MeshPhysicalMaterial({ roughness: 0.34, clearcoat: 0.7, clearcoatRoughness: 0.16 });
+    // Painted composite under a full clear coat: a satin base with a crisp, glossy top layer,
+    // so the softboxes and the sky lie on the cowl as clean highlights.
+    own.cowl = new THREE.MeshPhysicalMaterial({ roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.05 });
+    // Lower cowl: the same composite in a neutral tone, a colour break under the split line.
+    own.lower = new THREE.MeshPhysicalMaterial({ roughness: 0.5, clearcoat: 0.8, clearcoatRoughness: 0.12 });
     own.leg = new THREE.MeshPhysicalMaterial({ roughness: 0.45, clearcoat: 0.3, clearcoatRoughness: 0.35 });
     own.zinc = new THREE.MeshStandardMaterial({ color: '#8d9296', metalness: 0.55, roughness: 0.72 });
     own.bore = new THREE.MeshStandardMaterial({ color: '#0c0c0d', roughness: 0.9, side: THREE.DoubleSide });
     own.decal = new THREE.MeshStandardMaterial({ transparent: true, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
+    // Recessed intake louvres, drawn with their own shading (dark slot, shadowed top edge, lit lip).
+    own.vent = new THREE.MeshStandardMaterial({ map: ventTexture(), transparent: true, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
     for (const mat of Object.values(own)) mat.userData.shared = true;
   }
   const dark = m.cowling.color.getHSL({}).l < 0.3;
   own.cowl.color.copy(m.cowling.color);
-  own.cowl.roughness = dark ? 0.3 : 0.34;
-  // Brackets, midsection and gearcase in the same paint, a touch flatter.
+  own.cowl.roughness = dark ? 0.38 : 0.42;
+  own.lower.color.set(dark ? '#3a3e43' : '#80858a');
+  // Brackets, midsection and gearcase in the cowl's paint, a touch flatter.
   own.leg.color.copy(m.cowling.color).multiplyScalar(dark ? 1.25 : 0.94);
-  own.decal.color.set(dark ? '#a7adb3' : '#40464c');
+  own.decal.color.set(dark ? '#a7adb3' : '#4a5056');
   return own;
 }
 
-// Generic power-rating decal: the number and FOUR STROKE, no maker's name or mark.
+// Generic power-rating label: the number and FOUR STROKE, no maker's name or mark.
 const decals = new Map();
 function decalTexture(hp) {
   if (decals.has(hp)) return decals.get(hp);
@@ -40,16 +47,57 @@ function decalTexture(hp) {
   c.height = 128;
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#ffffff';
-  ctx.font = '700 92px Montserrat, "Helvetica Neue", Arial, sans-serif';
-  ctx.fillText(String(hp), 8, 98);
+  ctx.font = '700 104px Montserrat, "Helvetica Neue", Arial, sans-serif';
+  ctx.fillText(String(hp), 6, 106);
   const w = ctx.measureText(String(hp)).width;
-  ctx.font = '600 30px Montserrat, "Helvetica Neue", Arial, sans-serif';
-  ctx.fillText('FOUR STROKE', w + 26, 96);
-  ctx.fillRect(w + 26, 60, 470 - w - 26, 5);
+  ctx.font = '600 34px Montserrat, "Helvetica Neue", Arial, sans-serif';
+  ctx.fillText('FOUR STROKE', w + 22, 104);
+  ctx.fillRect(w + 22, 62, 500 - w - 22, 5);
   const texture = new THREE.CanvasTexture(c);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
   decals.set(hp, texture);
+  return texture;
+}
+
+// Four short louvres slanting up and aft (u runs aft), each a dark slot with a shadowed upper
+// edge and a lit lower lip, in a faint recessed panel. Neutral, so it suits either cowl colour.
+function ventTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 128;
+  const ctx = c.getContext('2d');
+  const slant = 26;
+  // Parallelogram from x0 to x1 (canvas y down), its top edge shifted aft by the slant.
+  const panel = (x0, x1, y0, y1, inset = 0) => {
+    ctx.beginPath();
+    ctx.moveTo(x0 + inset, y1 - inset);
+    ctx.lineTo(x1 - inset - slant, y1 - inset);
+    ctx.lineTo(x1 - inset, y0 + inset);
+    ctx.lineTo(x0 + inset + slant, y0 + inset);
+    ctx.closePath();
+  };
+  ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  panel(4, 252, 6, 122);
+  ctx.fill();
+  for (let i = 0; i < 4; i++) {
+    const y = 18 + i * 26;
+    const x0 = 22 + i * 6;
+    const x1 = 236 - (3 - i) * 4;
+    // Lit lip under the slot, the slot, and the shade inside its lower half.
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    panel(x0, x1, y + 3, y + 17);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(8,9,10,0.96)';
+    panel(x0, x1, y, y + 14);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(40,43,46,0.9)';
+    panel(x0, x1, y + 8, y + 14, 2);
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(c);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
   return texture;
 }
 
@@ -171,9 +219,12 @@ function lathe(profile, y, segments = 20) {
 
 // ---------- cowl ----------
 
-// The cowl's lines for a rating as functions of v (0 at the underside of the lower cowl, 1 at
-// the top). Sizes follow real 150 hp inline-four to 300 hp V6 cowls: 0.54 to 0.64 m wide,
-// 0.74 to 0.88 m above the clamp brackets, 0.80 to 0.92 m long.
+// The cowl's lines for a rating. v runs from 0 at the underside of the lower cowl to 1 at the
+// crown. Sizes follow real 150 hp inline-four to 300 hp V6 cowls: 0.54 to 0.64 m wide, 0.74 to
+// 0.88 m above the clamp brackets, 0.80 to 0.92 m long. Each height is a rounded plan section
+// (a superellipse, narrowing aft); above vc the sections shrink on an ellipse into a crowned
+// top. A character line runs along each side of the top cowl, rising aft: below it the side
+// stands a few millimetres proud, and the grid rows bend to follow it, so it stays crisp.
 function cowlLines(hp) {
   const k = clamp01((hp - 150) / 150);
   const W = 0.54 + 0.1 * k;
@@ -181,79 +232,139 @@ function cowlLines(hp) {
   const Lc = 0.8 + 0.12 * k;
   const d0 = 0.13;      // the cowl's nose, aft of the pod face
   const yb = -0.01;     // underside of the lower cowl
-  const front = smooth([[0, 0.205], [0.1, 0.16], [0.25, 0.137], [0.45, d0], [0.65, 0.142], [0.8, 0.172], [0.92, 0.25], [1, 0.4]]);
-  const back = smooth([[0, 0.72], [0.12, 0.9], [0.3, 0.975], [0.55, 1], [0.8, 0.99], [0.92, 0.95], [1, 0.8]]);
-  const half = smooth([[0, 0.7], [0.1, 0.86], [0.3, 0.97], [0.55, 1], [0.78, 0.97], [0.9, 0.88], [0.96, 0.74], [1, 0.5]]);
+  const vc = 0.8;       // where the crown begins
+  const split = 0.33;   // lower / top cowl split
+  const vL = 0.6;       // the character line, mid-length
+  const front = smooth([[0, 0.205], [0.1, 0.16], [0.25, 0.137], [0.45, d0], [0.65, 0.142], [0.8, 0.168], [1, 0.215]]);
+  const back = smooth([[0, 0.72], [0.12, 0.9], [0.3, 0.975], [0.55, 1], [0.8, 0.985], [1, 0.95]]);
+  const half = smooth([[0, 0.74], [0.1, 0.87], [0.3, 0.97], [0.5, 1], [0.68, 0.965], [0.85, 0.9], [1, 0.84]]);
   const P = 2.6;
   const dMid = d0 + Lc / 2;
   // The top rises a little towards the back, like most modern cowls.
   const shear = (d) => (0.035 * (d - dMid)) / Lc;
+  const crown = (v) => (v <= vc ? 1 : Math.max(0, 1 - ((v - vc) / (1 - vc)) ** 2.2) ** (1 / 2.2));
   const at = (v) => {
     const dF = front(v);
     const dB = d0 + Lc * back(v);
-    return { dc: (dF + dB) / 2, hl: (dB - dF) / 2, w: (W / 2) * half(v), y: lerp(yb, H, v) };
+    const e = crown(v);
+    return { dc: (dF + dB) / 2, hl: Math.max(1e-4, ((dB - dF) / 2) * e), w: Math.max(1e-4, (W / 2) * half(v) * e) };
   };
-  const taper = (u) => 1 - 0.12 * Math.max(0, u) ** 1.5;
+  const taper = (u) => 1 - 0.17 * Math.max(0, u) ** 1.5;
   const se = (c) => Math.sign(c) * Math.abs(c) ** (2 / P);
-  const ring = (v, n = 40) => {
+  const pw = (c) => Math.sign(c) * Math.abs(c) ** (P - 1);
+  const step = (e0, e1, x) => { const t = clamp01((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
+  // Rows near the character line bend to follow it as it rises aft.
+  const lineAt = (d) => vL + (0.09 * (d - dMid)) / Lc;
+  const warp = (v, d) => v + (lineAt(d) - vL) * (1 - step(0.035, 0.15, Math.abs(v - vL)));
+  const proud = (v) => 0.0042 * (1 - step(vL - 0.006, vL, v)) * step(split + 0.04, split + 0.12, v);
+  // A point from plan coordinates u (-1 nose to 1 aft) and q (z over the half-width), off proud.
+  // The character-line step is applied on the sides only (it fades out round the nose and aft).
+  const place = (v, r, u, q, off) => {
+    let d = r.dc + r.hl * u;
+    let z = r.w * q * taper(u);
+    const nx = pw(u) / r.hl;
+    const nz = pw(q) / r.w;
+    const nl = Math.hypot(nx, nz) || 1;
+    const push = proud(v) * (nz / nl) ** 4 + off;
+    d += (nx / nl) * push;
+    z += (nz / nl) * push;
+    return v3(-d, lerp(yb, H, warp(v, d)) + shear(d), z);
+  };
+  const ring = (v, n = 64, off = 0) => {
     const r = at(v);
     return Array.from({ length: n }, (_, j) => {
       const a = (j / n) * Math.PI * 2;
-      const u = se(Math.cos(a));
-      const d = r.dc + r.hl * u;
-      return v3(-d, r.y + shear(d), r.w * se(Math.sin(a)) * taper(u));
+      return place(v, r, se(Math.cos(a)), se(Math.sin(a)), off);
     });
   };
   // Point on the starboard (s = 1) or port side at distance d aft and height v, off proud.
   const side = (d, v, s, off = 0) => {
     const r = at(v);
     const u = Math.min(1, Math.max(-1, (d - r.dc) / r.hl));
-    const z = r.w * taper(u) * (1 - Math.abs(u) ** P) ** (1 / P);
-    return v3(-d, r.y + shear(d), s * (z + off));
+    return place(v, r, u, s * (1 - Math.abs(u) ** P) ** (1 / P), off);
   };
-  // Point on the aft face at z and height v.
-  const aftFace = (z, v, off = 0) => {
-    const r = at(v);
-    const d = r.dc + r.hl * (1 - Math.min(1, Math.abs(z) / (r.w * 0.88)) ** P) ** (1 / P) + off;
-    return v3(-d, r.y + shear(d), z);
-  };
-  return { k, W, H, Lc, d0, at, ring, side, aftFace };
+  const dB = (v) => at(v).dc + at(v).hl;
+  return { k, W, H, Lc, d0, vc, split, vL, at, ring, side, dB };
+}
+
+// Indexed skin through rings of equal count, wrapped round (a shared seam, so it shades
+// smoothly), optionally closed by a fan to a point (smooth: the crown) or by a flat cap on its
+// own vertices (a crisp edge: the underside). Wound outward.
+function skin(rings, { top, flatBottom } = {}) {
+  const n = rings[0].length;
+  const position = [];
+  const index = [];
+  for (const ring of rings) for (const p of ring) position.push(p.x, p.y, p.z);
+  for (let i = 0; i < rings.length - 1; i++) {
+    for (let j = 0; j < n; j++) {
+      const a = i * n + j;
+      const b = i * n + ((j + 1) % n);
+      index.push(a, b, b + n, a, b + n, a + n);
+    }
+  }
+  const last = (rings.length - 1) * n;
+  if (top) {
+    const t = position.length / 3;
+    position.push(top.x, top.y, top.z);
+    for (let j = 0; j < n; j++) index.push(last + j, last + ((j + 1) % n), t);
+  }
+  if (flatBottom) {
+    const base = position.length / 3;
+    const c = rings[0].reduce((acc, p) => acc.add(p), v3(0, 0, 0)).multiplyScalar(1 / n);
+    for (const p of rings[0]) position.push(p.x, p.y, p.z);
+    position.push(c.x, c.y, c.z);
+    for (let j = 0; j < n; j++) index.push(base + ((j + 1) % n), base + j, base + n);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(position, 3));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  // A side vertex halfway up must face away from its ring's centre.
+  const i = Math.floor(rings.length / 2);
+  const c = rings[i].reduce((acc, p) => acc.add(p), v3(0, 0, 0)).multiplyScalar(1 / n);
+  const p = rings[i][Math.floor(n / 4)];
+  const nrm = g.attributes.normal;
+  if (nrm.getX(i * n + Math.floor(n / 4)) * (p.x - c.x) + nrm.getZ(i * n + Math.floor(n / 4)) * (p.z - c.z) < 0) {
+    for (let k = 0; k < index.length; k += 3) [index[k + 1], index[k + 2]] = [index[k + 2], index[k + 1]];
+    g.setIndex(index);
+    g.computeVertexNormals();
+  }
+  return g;
 }
 
 function cowl(g, mats, m, hp) {
   const c = cowlLines(hp);
-  const split = 0.34;
-  const vs = [0, 0.03, 0.08, 0.15, 0.24, split, 0.45, 0.56, 0.67, 0.77, 0.85, 0.91, 0.95, 0.98, 1];
-  add(g, loft(vs.map((v) => c.ring(v))), mats.cowl);
+  const { split, vL, vc } = c;
+  // Lower cowl in the neutral tone, top cowl in the paint. Rows are packed round the character
+  // line (its step lies between vL - 0.006 and vL) and up into the crown.
+  const lowerRows = [0, 0.012, 0.03, 0.055, 0.09, 0.135, 0.19, 0.25, 0.3, split];
+  const crownRows = spaced(0, Math.PI / 2, 9).map((a) => vc + (1 - vc) * Math.sin(a)).slice(0, -1);
+  const upperRows = [split, 0.36, 0.4, 0.45, 0.5, 0.54, 0.565, vL - 0.018, vL - 0.006, vL, vL + 0.008, vL + 0.022, 0.645, 0.685, 0.725, 0.765, ...crownRows, 0.9995];
+  add(g, skin(lowerRows.map((v) => c.ring(v)), { flatBottom: true }), mats.lower);
+  const last = c.ring(0.9995);
+  const apex = last.reduce((acc, p) => acc.add(p), v3(0, 0, 0)).multiplyScalar(1 / last.length);
+  add(g, skin(upperRows.map((v) => c.ring(v)), { top: apex.add(v3(0, 0.0003, 0)) }), mats.cowl);
 
-  // Split line between the lower cowl and the top cowl: a dark seal just proud of the paint.
-  const mid = c.at(split).dc;
-  const seam = c.ring(split, 72).map((p) => p.clone().addScaledVector(v3(p.x + mid, 0, p.z).normalize(), 0.003));
-  add(g, tube(seam, 0.0045, 144, 5, true), m.rubber, { cast: false });
+  // Split line: a dark seal round the joint, just proud of both halves.
+  add(g, tube(c.ring(split, 96, 0.0025), 0.0042, 192, 6, true), m.rubber, { cast: false });
 
-  // Side intakes high on the top cowl: four slanted slots each side, and the rating decal.
-  const dB = (v) => c.at(v).dc + c.at(v).hl;
+  // Intakes: a short panel of slanted louvres high on each side at the aft shoulder, above the
+  // character line. The rating label sits small, lower and further forward.
   for (const s of [1, -1]) {
-    for (let i = 0; i < 4; i++) {
-      const v0 = 0.7 + i * 0.038;
-      const slot = patch((u, w) => {
-        const v = v0 + w * 0.018 + u * 0.03;
-        return c.side(lerp(dB(v) - 0.33, dB(v) - 0.11, u), v, s, 0.0025);
-      }, 8, 1, v3(0, 0, s));
-      add(g, slot, m.rubber, { cast: false });
-    }
-    const label = patch((u, w) => c.side(lerp(c.d0 + c.Lc * 0.6, c.d0 + c.Lc * 0.14, s > 0 ? u : 1 - u), lerp(0.47, 0.58, w), s, 0.003), 12, 2, v3(0, 0, s));
+    const vent = patch((u, w) => {
+      const v = lerp(0.675, 0.775, w);
+      const dd = c.dB(v);
+      return c.side(lerp(dd - 0.29, dd - 0.085, u), v, s, 0.0018);
+    }, 10, 4, v3(0, 0, s));
+    add(g, vent, mats.vent, { cast: false });
+    const label = patch((u, w) => {
+      const v = lerp(0.455, 0.505, w);
+      const dd = c.dB(v);
+      return c.side(lerp(dd - 0.21, dd - 0.4, s > 0 ? u : 1 - u), v, s, 0.0022);
+    }, 10, 2, v3(0, 0, s));
     add(g, label, mats.decal, { cast: false });
   }
   mats.decal.map = decalTexture(hp);
-
-  // Intake grille and lift-handle recess on the aft face of the top cowl.
-  const gw = 0.1 + 0.03 * c.k;
-  for (let i = 0; i < 4; i++) {
-    const v0 = 0.68 + i * 0.032;
-    add(g, patch((u, w) => c.aftFace(lerp(-gw, gw, u), v0 + w * 0.016, 0.0025), 10, 1, v3(-1, 0, 0)), m.rubber, { cast: false });
-  }
-  add(g, patch((u, w) => c.aftFace(lerp(-0.07, 0.07, u), lerp(0.41, 0.43, w), 0.0025), 6, 1, v3(-1, 0, 0)), m.rubber, { cast: false });
   return c;
 }
 

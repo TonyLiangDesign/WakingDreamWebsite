@@ -9,26 +9,56 @@ import { DECK_Y } from './hull.js';
 // underwater lights. Each builds into the group it is given; underwaterLights() also returns
 // the two lamp positions (boat-local) for the water glow, which has exactly two slots.
 // fittings.js owns the light geometry; cabin.js and console.js place navLight(), allRoundLight()
-// and bowNavLight(). bowEyePoint(lines) gives the trailer strap's hook point on the bow eye.
+// and bowNavLight(). bowEyePoint(lines) gives the trailer strap's hook point on the bow eye, and
+// whipMaterial() the VHF whip's material (noFit, like the rods and reels).
 
 const TUBE = 0.0145;  // 29 mm stainless tube for the bow rail, its stanchions and legs
 
 // Part-specific materials, built once.
+// Rods, reels and the VHF whip are thin, tall and optional: the camera leaves them out of its
+// framing. Their materials carry userData.noFit = true, which survives mergeStatic() (it merges
+// by material), and nothing else uses these materials.
 const own = {};
 function ownMaterials() {
   if (!own.line) {
-    own.line = new THREE.MeshStandardMaterial({ color: '#c8b45a', roughness: 0.6 });
-    own.reel = new THREE.MeshStandardMaterial({ color: '#2a2d31', metalness: 0.6, roughness: 0.35 });
-    // Polished stainless anchor, so it reads against the satin alloy sprit.
-    own.anchor = new THREE.MeshStandardMaterial({ color: '#d9dcde', metalness: 1, roughness: 0.2 });
+    // Fishing tackle (noFit): line on the spool, dark anodised reel frame, gold and polished
+    // accents, EVA grips, the blank (below) and the guides.
+    own.line = new THREE.MeshStandardMaterial({ color: '#6d8c99', roughness: 0.55 });
+    own.reel = new THREE.MeshStandardMaterial({ color: '#202327', metalness: 0.75, roughness: 0.3 });
+    own.reelGold = new THREE.MeshStandardMaterial({ color: '#d2a443', metalness: 1, roughness: 0.28 });
+    own.reelSilver = new THREE.MeshStandardMaterial({ color: '#dfe3e6', metalness: 1, roughness: 0.18 });
+    own.grip = new THREE.MeshStandardMaterial({ color: '#1b1c1d', roughness: 0.85 });
+    own.blank = blankMaterial();
+    own.whip = new THREE.MeshStandardMaterial({ color: '#efeee9', roughness: 0.4 });
+    for (const key of ['line', 'reel', 'reelGold', 'reelSilver', 'grip', 'blank', 'whip']) own[key].userData.noFit = true;
+    // Polished stainless anchor. The share hangs with its convex face forward and down, so as a
+    // plain mirror it would reflect only the dark studio floor and read as a black blade. Like a
+    // white bounce card under a product shot, reflections that point below the horizon are folded
+    // up onto the walls and softboxes (on the water: onto the sky, as the sea would mirror it).
+    own.anchor = new THREE.MeshStandardMaterial({ color: '#f2f4f6', metalness: 1, roughness: 0.22, envMapIntensity: 1.35 });
+    own.anchor.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace('#include <envmap_physical_pars_fragment>', THREE.ShaderChunk.envmap_physical_pars_fragment.replace(
+        'reflectVec = transformDirectionByInverseViewMatrix( reflectVec, viewMatrix );',
+        'reflectVec = transformDirectionByInverseViewMatrix( reflectVec, viewMatrix );\n\t\t\treflectVec.y = reflectVec.y < 0.0 ? - reflectVec.y * 0.4 : reflectVec.y;\n\t\t\treflectVec = normalize( reflectVec );'));
+    };
+    own.anchor.customProgramCacheKey = () => 'anchor-bounce';
     // Clear-anodised, brushed alloy for the bowsprit (the brushed roughness map is set per build).
     own.sprit = new THREE.MeshPhysicalMaterial({ color: '#b4babf', metalness: 0.85, roughness: 0.3, clearcoat: 0.2, clearcoatRoughness: 0.3 });
     own.white = new THREE.MeshStandardMaterial({ color: '#f2f2ee', emissive: '#fff8e8', emissiveIntensity: 0.5, roughness: 0.15 });
     own.hole = new THREE.MeshStandardMaterial({ color: '#0b0b0c', roughness: 0.95 });
-    own.blank = blankMaterial();
+    // Glossy coloured nav-light lenses with a moderate glow: they read as red and green lenses
+    // by day, not as flat emissive blocks.
+    own.lensRed = new THREE.MeshPhysicalMaterial({ color: '#a8121a', emissive: '#ff2216', emissiveIntensity: 0.6, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.04 });
+    own.lensGreen = new THREE.MeshPhysicalMaterial({ color: '#0d8a3c', emissive: '#22e066', emissiveIntensity: 0.55, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.04 });
     for (const mat of Object.values(own)) mat.userData.shared = true;
   }
   return own;
+}
+
+// The VHF whip's material (white fibreglass, noFit), for cabin.js and console.js, so the camera
+// can leave the whip out of its framing like the rods.
+export function whipMaterial() {
+  return ownMaterials().whip;
 }
 
 // Rod blanks taper to a 5 mm tip, well under a pixel at hero distance, where they would break
@@ -48,6 +78,7 @@ function blankMaterial() {
       gl_Position = projectionMatrix * mvPosition;`)}`;
   };
   mat.customProgramCacheKey = () => 'rod-blank-min-width';
+  mat.userData.noFit = true;
   mat.onBeforeRender = (renderer) => { halfHeight.value = renderer.getSize(size).y / 2 || 450; };
   return mat;
 }
@@ -60,35 +91,69 @@ function alongY(mesh, dir) {
 
 // ---------- rocket launcher ----------
 
-// One rod in a holder: EVA butt, reel seat and overhead reel, fore grip, a tapered blank with
-// guides. base is the bottom of the holder, dir the holder axis.
-function fishingRod(group, m, mats, base, dir) {
+// Places a mesh with its local x, y and z axes along the given (orthonormal) axes.
+function oriented(mesh, x, y, z, at) {
+  mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+  mesh.position.copy(at);
+  return mesh;
+}
+
+// One 1.8 m boat rod in a holder: EVA butt, polished reel seat with a gold locking ring, EVA
+// fore grip, a gold winding check, the tapered blank with five guides and a tip-top, and a
+// conventional overhead reel on the upper side of the rod as it leans aft. base is the butt of
+// the rod, dir the holder axis. Every mesh uses a noFit tackle material.
+function fishingRod(group, mats, base, dir) {
   const at = (s) => base.clone().addScaledVector(dir, s);
-  const length = 1.95;
-  alongY(add(group, new THREE.CylinderGeometry(0.0125, 0.0135, 0.38, 10), m.rubber), dir).position.copy(at(0.22));
-  alongY(add(group, new THREE.CylinderGeometry(0.0105, 0.0115, 0.14, 10), m.rubber), dir).position.copy(at(0.48));
-  alongY(add(group, new THREE.CylinderGeometry(0.0024, 0.0082, length - 0.41, 8), mats.blank), dir).position.copy(at((length + 0.41) / 2));
-  // Overhead reel on the upper side of the rod as it leans aft.
+  const length = 1.8;
+  const seg = (s0, s1, r0, r1, mat, radial = 10) => alongY(add(group, new THREE.CylinderGeometry(r1, r0, s1 - s0, radial), mat), dir).position.copy(at((s0 + s1) / 2));
+  seg(0, 0.3, 0.0135, 0.0127, mats.grip);
+  seg(0.3, 0.42, 0.0112, 0.0112, mats.reelSilver, 12);
+  seg(0.42, 0.56, 0.0118, 0.0104, mats.grip);
+  seg(0.56, length, 0.0084, 0.0024, mats.blank, 8);
+  for (const [s, r, mat] of [[0.3, 0.0142, mats.reelGold], [0.42, 0.0134, mats.reelGold], [0.566, 0.0108, mats.reelGold]]) {
+    const ring = add(group, new THREE.CylinderGeometry(r, r, 0.012, 10), mat);
+    alongY(ring, dir).position.copy(at(s));
+  }
+
+  // Frame: up is the rod's upper side, axle the spool axis (athwartships), dir along the rod.
   const up = new THREE.Vector3().crossVectors(dir, v3(0, 0, 1)).normalize();
   const axle = new THREE.Vector3().crossVectors(up, dir).normalize();
-  const centre = at(0.36).addScaledVector(up, 0.058);
-  alongY(add(group, new THREE.BoxGeometry(0.016, 0.06, 0.02), mats.reel), dir).position.copy(at(0.36).addScaledVector(up, 0.018));
+  const C = at(0.36).addScaledVector(up, 0.052);
+  const onAxle = (geo, mat, off, opts) => alongY(add(group, geo, mat, opts), axle).position.copy(C.clone().addScaledVector(axle, off));
+  // Side plates in dark anodising with gold rims, a spool of line between polished flanges.
   for (const s of [1, -1]) {
-    alongY(add(group, new THREE.CylinderGeometry(0.04, 0.04, 0.012, 18), mats.reel), axle).position.copy(centre.clone().addScaledVector(axle, s * 0.036));
+    onAxle(new THREE.CylinderGeometry(0.037, 0.037, 0.011, 16), mats.reel, s * 0.033);
+    const rim = add(group, new THREE.TorusGeometry(0.0355, 0.0032, 3, 12), mats.reelGold);
+    rim.quaternion.setFromUnitVectors(v3(0, 0, 1), axle);
+    rim.position.copy(C).addScaledVector(axle, s * 0.0385);
+    onAxle(new THREE.CylinderGeometry(0.031, 0.031, 0.003, 14), mats.reelSilver, s * 0.026, { cast: false });
   }
-  alongY(add(group, new THREE.CylinderGeometry(0.031, 0.031, 0.06, 16), mats.line), axle).position.copy(centre);
-  for (const s of [1, -1]) rod(group, centre.clone().addScaledVector(axle, -0.036).addScaledVector(up, 0.03).addScaledVector(dir, s * 0.02), centre.clone().addScaledVector(axle, 0.036).addScaledVector(up, 0.03).addScaledVector(dir, s * 0.02), 0.004, mats.reel, 6);
-  // Crank on the right-hand side plate.
-  const hub = centre.clone().addScaledVector(axle, 0.05);
-  rod(group, hub, hub.clone().addScaledVector(dir, -0.05), 0.004, m.stainless, 6);
-  const knob = add(group, new THREE.CylinderGeometry(0.009, 0.009, 0.02, 10), m.rubber);
-  alongY(knob, axle).position.copy(hub.clone().addScaledVector(dir, -0.05).addScaledVector(axle, 0.01));
-  // Guides along the blank, and the tip-top.
-  for (const s of [0.78, 1.12, 1.45, length - 0.01]) {
-    const r = lerp(0.008, 0.004, (s - 0.78) / (length - 0.78));
-    const ring = add(group, new THREE.TorusGeometry(r, 0.0013, 4, 8), m.stainless, { cast: false });
-    ring.position.copy(at(s).addScaledVector(up, r + 0.004));
+  onAxle(new THREE.CylinderGeometry(0.0275, 0.0275, 0.05, 12), mats.line, 0);
+  // Three pillars between the plates, and the foot clamped to the reel seat.
+  for (const [a, b] of [[-1, 0], [0.7, 0.7], [0.7, -0.7]]) {
+    const p = C.clone().addScaledVector(up, a * 0.033).addScaledVector(dir, b * 0.033);
+    rod(group, p.clone().addScaledVector(axle, -0.028), p.clone().addScaledVector(axle, 0.028), 0.0032, mats.reel, 6);
+  }
+  oriented(add(group, new THREE.BoxGeometry(0.012, 0.06, 0.016), mats.reel), up, dir, axle, at(0.36).addScaledVector(up, 0.0135));
+  // Right-hand wind (to port, seen from the butt): star drag, polished crank arm, EVA power knob
+  // with a gold cap.
+  onAxle(new THREE.CylinderGeometry(0.017, 0.017, 0.005, 6), mats.reelSilver, -0.044);
+  onAxle(new THREE.CylinderGeometry(0.008, 0.008, 0.012, 10), mats.reelGold, -0.049);
+  const arm = dir.clone().multiplyScalar(-0.8).addScaledVector(up, -0.6).normalize();
+  const side = new THREE.Vector3().crossVectors(axle, arm);
+  oriented(add(group, new THREE.BoxGeometry(0.07, 0.011, 0.004), mats.reelSilver), arm, side, axle, C.clone().addScaledVector(axle, -0.052).addScaledVector(arm, 0.03));
+  const end = C.clone().addScaledVector(axle, -0.052).addScaledVector(arm, 0.06);
+  alongY(add(group, new THREE.CylinderGeometry(0.0095, 0.0105, 0.026, 12), mats.grip), axle).position.copy(end.clone().addScaledVector(axle, -0.015));
+  alongY(add(group, new THREE.CylinderGeometry(0.006, 0.006, 0.004, 10), mats.reelGold), axle).position.copy(end.clone().addScaledVector(axle, -0.029));
+
+  // Guides along the blank on short feet, and the tip-top.
+  for (const s of [0.8, 1.06, 1.3, 1.52, length - 0.006]) {
+    const r = lerp(0.0085, 0.0035, (s - 0.8) / (length - 0.8));
+    const blankR = lerp(0.0084, 0.0024, (s - 0.56) / (length - 0.56));
+    const ring = add(group, new THREE.TorusGeometry(r, 0.0013, 3, 8), mats.reelSilver, { cast: false });
+    ring.position.copy(at(s).addScaledVector(up, blankR + r + 0.004));
     ring.quaternion.setFromUnitVectors(v3(0, 0, 1), dir);
+    if (s < length - 0.01) rod(group, at(s), at(s).addScaledVector(up, blankR + 0.004), 0.0012, mats.reelSilver, 4);
   }
 }
 
@@ -134,9 +199,10 @@ export function rocketLauncher(group, m, x, y, width, count) {
   for (let i = 0; i < count; i++) {
     const f = count === 1 ? 0 : i / (count - 1) * 2 - 1;
     const z = f * half;
-    // Outer holders lean further aft as well as further out, so the rods separate in profile.
-    const lean = 0.2 + 0.2 * Math.abs(f);
-    const fan = 0.2 * f;
+    // About 11.5 degrees aft (the outer holders to 13.5, so the rods separate in profile) and a
+    // small symmetric fan outboard, to 5 degrees.
+    const lean = 0.2 + 0.035 * Math.abs(f);
+    const fan = 0.087 * f;
     const dir = v3(-Math.sin(lean), Math.cos(lean) * Math.cos(fan), Math.sin(fan)).normalize();
     const base = v3(x, barY, z).addScaledVector(dir, onPost ? -0.02 : -0.03);
     const top = base.clone().addScaledVector(dir, 0.27);
@@ -144,7 +210,7 @@ export function rocketLauncher(group, m, x, y, width, count) {
     const lip = add(group, new THREE.TorusGeometry(0.022, 0.005, 6, 14), m.stainless);
     lip.position.copy(top);
     lip.quaternion.setFromUnitVectors(v3(0, 0, 1), dir);
-    fishingRod(group, m, mats, base.clone().addScaledVector(dir, onPost ? 0.02 : 0.03), dir);
+    fishingRod(group, mats, base.clone().addScaledVector(dir, onPost ? 0.02 : 0.03), dir);
   }
 }
 
@@ -157,11 +223,13 @@ export function rocketLauncher(group, m, x, y, width, count) {
 // and should call bowNavLight() and allRoundLight() below.
 export function navLight(group, m, x, y, z) {
   const s = Math.sign(z) || 1;
-  const housing = add(group, new RoundedBoxGeometry(0.13, 0.065, 0.02, 2, 0.006), m.rubber);
+  const mats = ownMaterials();
+  const housing = add(group, new RoundedBoxGeometry(0.135, 0.068, 0.02, 2, 0.006), m.rubber);
   housing.position.set(x, y, z);
-  box(group, m.stainless, [0.105, 0.045, 0.004], [x + 0.004, y, z + s * 0.011]);
-  const lens = add(group, new RoundedBoxGeometry(0.09, 0.034, 0.012, 2, 0.005), s > 0 ? m.navGreen : m.navRed, { cast: false });
-  lens.position.set(x + 0.006, y, z + s * 0.014);
+  box(group, m.stainless, [0.114, 0.05, 0.004], [x + 0.003, y, z + s * 0.011]);
+  // A domed lens standing proud of the bezel: starboard green, port red (z is to starboard).
+  const lens = add(group, new RoundedBoxGeometry(0.1, 0.04, 0.014, 3, 0.0065), s > 0 ? mats.lensGreen : mats.lensRed, { cast: false });
+  lens.position.set(x + 0.004, y, z + s * 0.015);
 }
 
 // All-round white light on a stainless pole: base at (x, y, z), lens height above it.
@@ -179,14 +247,19 @@ export function allRoundLight(group, m, x, y, z, height = 0.42) {
 // Bow bicolour (red to port, green to starboard) on a short stalk, for layouts without side
 // lights; (x, y) is the deck on the centreline.
 export function bowNavLight(group, m, x, y) {
+  const mats = ownMaterials();
   rod(group, v3(x, y, 0), v3(x, y + 0.08, 0), 0.01, m.stainless, 8);
-  const body = add(group, new THREE.CylinderGeometry(0.035, 0.035, 0.05, 16), m.rubber);
-  body.position.set(x, y + 0.105, 0);
+  const body = add(group, new THREE.CylinderGeometry(0.035, 0.035, 0.052, 16), m.rubber);
+  body.position.set(x, y + 0.106, 0);
+  // Lens arcs (a cylinder's theta runs from +z towards +x): green from dead ahead round to
+  // 22.5 degrees abaft the starboard beam, red likewise to port, split by a black fin ahead.
+  const gap = 0.03;
   for (const s of [1, -1]) {
-    const lens = add(group, new THREE.CylinderGeometry(0.037, 0.037, 0.034, 12, 1, true, s > 0 ? 0 : Math.PI, Math.PI * 0.9), s > 0 ? m.navGreen : m.navRed, { cast: false });
-    lens.position.set(x, y + 0.105, 0);
-    lens.rotation.y = Math.PI * 0.05 - Math.PI / 2;
+    const start = s > 0 ? -Math.PI / 8 : Math.PI / 2 + gap;
+    const lens = add(group, new THREE.CylinderGeometry(0.037, 0.037, 0.034, 12, 1, true, start, (5 * Math.PI) / 8 - gap), s > 0 ? mats.lensGreen : mats.lensRed, { cast: false });
+    lens.position.set(x, y + 0.106, 0);
   }
+  box(group, m.rubber, [0.012, 0.036, 0.004], [x + 0.038, y + 0.106, 0]);
 }
 
 // ---------- bow ----------
@@ -396,7 +469,7 @@ export function bowFittings(group, lines, m) {
   // Plough anchor: a forged shank resting on both rollers, deepening and thinning towards the
   // crown as it curves down over the bow roller, a crown boss with its pin, and the share
   // hanging ahead of the roller with its toe down and back, clear of the stem.
-  const t1 = v3(xr, yr + 0.042, 0);
+  const t1 = v3(xr, yr + 0.03, 0);     // shank bedded in the V of the bow roller (waist r 27 mm)
   const t2 = v3(xk, yk + 0.02, 0);
   const e = t1.clone().sub(t2).normalize();
   const n = v3(-e.y, e.x, 0);
@@ -405,7 +478,7 @@ export function bowFittings(group, lines, m) {
     t2.clone().addScaledVector(e, -0.2).addScaledVector(n, 0.016),
     t2.clone().addScaledVector(n, 0.017),
     t1.clone().addScaledVector(n, 0.021),
-    v3(xr + 0.085, yr + 0.047, 0),
+    v3(xr + 0.085, yr + 0.036, 0),
     crown,
   ], false, 'centripetal');
   const rings = spaced(0, 1, 30).map((u) => {
