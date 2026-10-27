@@ -14,7 +14,10 @@ import { roundLoop, offsetLoop } from './cabin.js';
 // the group given.
 // hardtopHelm() receives the placement returned by cabin.js: { C, hw(x), wallZ(x, y) }.
 // consoleHelm() receives the placement returned by console.js: { cx0, top, Wc, yTop(x), postX }.
-// Both take an optional { twin } as a fourth argument for the dual binnacle.
+// Both take an optional { twin } as a fourth argument for the dual binnacle, and both return the
+// helmsman's anchors for the skipper (crew.js): { wheel: { rim, axis, radius }, throttle (the
+// grip), and seat (hardtop: helm cushion centre, top surface) or stand (console: the leaning
+// post's front face x) }.
 // Hardtop: the dash is moulded wall to wall under the screen foot and fitted to the walls'
 // taper; the helm pod stands proud on starboard over an open footwell, the passenger side is a
 // shallow dash with a grab rail over the cuddy entrance in the forward bulkhead.
@@ -656,7 +659,8 @@ function compass(group, m, x, y, z, r = 0.058) {
 }
 
 // Wheel on a tilt column: rubber boot from the dash, knuckle, then the shaft tilted a little
-// further up to a dished three-spoke wheel. tilt is the face angle from vertical. Returns the rim centre.
+// further up to a dished three-spoke wheel. tilt is the face angle from vertical. Returns the rim
+// centre and the wheel's axis (pointing at the helmsman).
 function helmWheel(group, m, hm, base, tilt, radius = 0.175) {
   const n = v3(-Math.cos(tilt), Math.sin(tilt), 0);
   const knuckle = base.clone().addScaledVector(n, 0.075);
@@ -693,7 +697,7 @@ function helmWheel(group, m, hm, base, tilt, radius = 0.175) {
     const dir = across.clone().multiplyScalar(Math.cos(a)).addScaledVector(up, Math.sin(a));
     rod(group, centre.clone().addScaledVector(dir, 0.04).addScaledVector(axis, 0.012), rimC.clone().addScaledVector(dir, radius - 0.01), 0.0078, hm.polished, 8);
   }
-  return rimC;
+  return { rim: rimC, axis, radius };
 }
 
 // Top-mount throttle and shift binnacle on a flat at y, levers raking aft (-x). Satin body on
@@ -972,7 +976,8 @@ export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
   key.quaternion.setFromUnitVectors(v3(0, 1, 0), front.n);
   const wheel = helmWheel(group, m, hm, front.at(0.5, zw, 0), face.tilt);
   compass(group, m, xT + 0.12, yDeck, zw);
-  binnacle(group, m, hm, xT + 0.115, yDeck, walls(xT + 0.115, dTop + 0.2) - (twin ? 0.1 : 0.08), twin);
+  const zThr = walls(xT + 0.115, dTop + 0.2) - (twin ? 0.1 : 0.08);
+  binnacle(group, m, hm, xT + 0.115, yDeck, zThr, twin);
   vhfHandset(group, m, v3(xT + 0.04, dTop - 0.25, zIn - 0.008), v3(0, 0, -1));
   phoneTray(group, m, hm, xT + 0.15, yDeck, zM);
   for (const dz of [-0.052, 0.052]) cupHolder(group, m, hm, xT + 0.13, yDeck, -zw + dz);
@@ -987,12 +992,13 @@ export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
   add(group, tube([v3(xB, DECK_Y + 0.22, zw - 0.2), v3(xB - 0.13, DECK_Y + 0.24, zw - 0.17), v3(xB - 0.13, DECK_Y + 0.24, zw + 0.17), v3(xB, DECK_Y + 0.22, zw + 0.2)], 0.0125, 16, 6), m.stainless);
 
   // Helm and passenger seats, cushion front about a third of a metre aft of the wheel rim.
-  const seatX = wheel.x - 0.6;
+  const seatX = wheel.rim.x - 0.6;
   // Seats 0.5 m wide with 0.4 m footrest rings need 0.54 m between centres: on the narrow 550
   // cabin they sit a little outboard of the wheel line rather than touch.
   const seatZ = Math.max(zw, 0.27);
   pedestalSeat(group, m, hm, seatX, seatZ);
   pedestalSeat(group, m, hm, seatX, -seatZ);
+  return { wheel, throttle: v3(xT + 0.05, yDeck + 0.15, zThr), seat: v3(seatX, DECK_Y + 0.63, seatZ) };
 }
 
 // Rounded-top doorway outline in the bulkhead's shape plane (X = -z, Y = y), grown by g.
@@ -1071,7 +1077,7 @@ export function consoleHelm(group, m, { cx0, top, Wc, yTop, postX }, { twin = fa
   const wheelPad = add(group, new THREE.CylinderGeometry(0.075, 0.08, 0.02, 20), hm.fascia);
   wheelPad.position.set(cx0 - 0.004, yA - 0.13, zW);
   wheelPad.rotation.z = Math.PI / 2;
-  helmWheel(group, m, hm, v3(cx0 - 0.012, yA - 0.13, zW), 0.32);
+  const wheel = helmWheel(group, m, hm, v3(cx0 - 0.012, yA - 0.13, zW), 0.32);
   fascia(group, hm, aft, -0.345, -0.135, fa(yA - 0.31), fa(yA - 0.06));
   const panelFront = rakedFace([cx0, DECK_Y], [cx0, yA], 0.008);
   switchPanel(group, m, hm, panelFront, fa(yA - 0.115), -0.24, 4, 2);
@@ -1082,6 +1088,7 @@ export function consoleHelm(group, m, { cx0, top, Wc, yTop, postX }, { twin = fa
   add(group, tube([v3(cx0 + 0.005, DECK_Y + 0.2, -0.28), v3(cx0 - 0.12, DECK_Y + 0.22, -0.25), v3(cx0 - 0.12, DECK_Y + 0.22, 0.25), v3(cx0 + 0.005, DECK_Y + 0.2, 0.28)], 0.0125, 16, 6), m.stainless);
 
   leaningPost(group, m, hm, postX);
+  return { wheel, throttle: v3(cx0 + 0.04, yTop(cx0 + 0.11) + 0.15, thrZ), stand: postX + 0.08 };
 }
 
 // Leaning post: moulded tackle module with drawers on its aft face, vinyl bolster on top,

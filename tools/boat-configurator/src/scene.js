@@ -6,6 +6,7 @@ import { createMaterials, applyBuild } from './materials.js';
 import { buildBoat, disposeTree, TRAILER_LIFT, CRADLE_LIFT } from './boat/index.js';
 import { createSky, createWater, createUnderwater, waterlineUniforms, wetMaterial, SUN_DIR, WL_STATIONS } from './water.js';
 import { createSpray, createWhiteWater } from './spray.js';
+import { loadSkipper, placeSkipper } from './crew.js';
 
 // Renderer, environments, lights, studio floor and contact shadow, sky and water, the boat's
 // place in the scene (running trim and motion), the water reflection pass and the render loop.
@@ -147,6 +148,8 @@ export const mats = createMaterials();
 for (const m of Object.values(mats)) wetMaterial(m, wet);
 export let current = null;
 export let onWater = false;
+// The skipper at the helm (crew.js), loaded the first time the water scene shows.
+let skipper = null;
 let lift = 0;
 let trim = 0;
 
@@ -328,6 +331,18 @@ function applyScene(build) {
   fitKeyShadow();
   water.material.uniforms.uGlowOn.value = onWater && current.leds.length ? 1 : 0;
   if (!onWater) contact.bake();
+  if (skipper) skipper.root.visible = onWater;
+  if (onWater) {
+    loadSkipper().then((s) => {
+      skipper = s;
+      if (!s.root.parent) offset.add(s.root);
+      s.root.visible = onWater;
+      if (!onWater) return;
+      vessel.updateMatrixWorld(true);
+      placeSkipper(s, current.helm);
+      collectOcclusionHidden();
+    });
+  }
   collectOcclusionHidden();
 }
 
@@ -664,6 +679,7 @@ function collectOcclusionHidden() {
       }
     });
   }
+  if (skipper?.root.visible) for (const mesh of skipper.meshes) aoDrawn.push({ mesh, side: mesh.material.side, material: null });
   aoDrawn.push({ mesh: floor, side: THREE.FrontSide, material: null }, { mesh: water, side: THREE.FrontSide, material: null });
   // AO only round the rig: the floor and water just beyond it, nothing further out.
   aoBox.copy(shadowBox).expandByScalar(0.35);
