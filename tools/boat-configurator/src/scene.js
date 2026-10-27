@@ -205,7 +205,8 @@ export function mountBoat(build) {
   }
   applyBuild(mats, build);
   current = buildBoat(build, mats);
-  current.boat.traverse((o) => { if (o.isMesh) wetMaterial(o.material, wet); });
+  // The trailer and cradle take the patch too, so they draw with the boat's programs.
+  for (const part of [current.boat, current.trailer, current.cradle]) part.traverse((o) => { if (o.isMesh) wetMaterial(o.material, wet); });
   offset.add(current.boat);
   stand.add(current.trailer, current.cradle);
   offset.position.x = -current.lines.L / 2;
@@ -959,6 +960,8 @@ export function qaCompileHandles(camera) {
   return {
     scene,
     renderer,
+    get current() { return current; },
+    get skipper() { return skipper; },
     frame: () => renderFrame(camera),
     salt(test) {
       const seen = new Set();

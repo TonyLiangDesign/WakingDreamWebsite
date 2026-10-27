@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lit } from '../materials.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { add, tube, rod, box, extrudeProfile, v3, lerp } from './kit.js';
@@ -251,29 +252,29 @@ function helmMaterials(m) {
   }
   cache = {
     // Dark glass: the page shows through the emissive map, the clearcoat gives the reflections.
-    screen: new THREE.MeshPhysicalMaterial({
+    screen: lit({
       color: '#030507', roughness: 0.12, clearcoat: 1, clearcoatRoughness: 0.04,
       emissive: '#ffffff', emissiveMap: screenAtlas(), emissiveIntensity: 1.05,
     }),
-    fascia: new THREE.MeshStandardMaterial({ color: '#1a1c1e', roughness: 0.82 }),
+    fascia: lit({ color: '#1a1c1e', roughness: 0.82 }),
     // Anti-glare dash top: a charcoal, dead-flat finish, a step lighter than the fascia.
-    antiglare: new THREE.MeshStandardMaterial({ color: '#2a2d30', roughness: 0.95 }),
-    bezel: new THREE.MeshStandardMaterial({ color: '#0b0c0d', roughness: 0.3 }),
+    antiglare: lit({ color: '#2a2d30', roughness: 0.95 }),
+    bezel: lit({ color: '#0b0c0d', roughness: 0.3 }),
     // Marine vinyl: off-white body and bolsters, grey pleated inserts, charcoal welt piping.
-    vinyl: new THREE.MeshPhysicalMaterial({ color: '#ebe8e1', roughness: 0.55, clearcoat: 0.25, clearcoatRoughness: 0.45 }),
-    insert: new THREE.MeshPhysicalMaterial({ color: '#ffffff', map: stitchTexture(), roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.5 }),
-    piping: new THREE.MeshStandardMaterial({ color: '#34383c', roughness: 0.5 }),
+    vinyl: lit({ color: '#ebe8e1', roughness: 0.55, clearcoat: 0.25, clearcoatRoughness: 0.45 }),
+    insert: lit({ color: '#ffffff', map: stitchTexture(), roughness: 0.6, clearcoat: 0.2, clearcoatRoughness: 0.5 }),
+    piping: lit({ color: '#34383c', roughness: 0.5 }),
     // Moulded seat shells: light grey satin polymer.
-    shell: new THREE.MeshStandardMaterial({ color: '#a4a9ad', roughness: 0.38 }),
+    shell: lit({ color: '#a4a9ad', roughness: 0.38 }),
     // Satin black for the throttle body, swivel housing and seat hardware.
-    satin: new THREE.MeshStandardMaterial({ color: '#1d1f21', roughness: 0.4, metalness: 0.2 }),
+    satin: lit({ color: '#1d1f21', roughness: 0.4, metalness: 0.2 }),
     // Brushed anodised alloy for the pedestal columns.
-    post: new THREE.MeshStandardMaterial({ color: '#cfd3d6', metalness: 0.75, roughness: 0.38, roughnessMap: brushed }),
+    post: lit({ color: '#cfd3d6', metalness: 0.75, roughness: 0.38, roughnessMap: brushed }),
     // Polished stainless for the wheel, cup-holder rims and grab handles: brighter in the environment.
-    polished: new THREE.MeshStandardMaterial({ color: '#f1f3f5', metalness: 1, roughness: 0.07, envMapIntensity: 1.6 }),
+    polished: lit({ color: '#f1f3f5', metalness: 1, roughness: 0.07, envMapIntensity: 1.6 }),
     // Shadow gap behind the leaning post's drawer faces.
-    recess: new THREE.MeshStandardMaterial({ color: '#1b1d1f', roughness: 0.85 }),
-    led: new THREE.MeshStandardMaterial({ color: '#0d2a14', emissive: '#3ddc6a', emissiveIntensity: 0.9 }),
+    recess: lit({ color: '#1b1d1f', roughness: 0.85 }),
+    led: lit({ color: '#0d2a14', emissive: '#3ddc6a', emissiveIntensity: 0.9 }),
   };
   for (const mat of Object.values(cache)) mat.userData.shared = true;
   return cache;
@@ -755,6 +756,12 @@ function binnacle(group, m, hm, x, y, z, twin) {
   }
 }
 
+// Where the helmsman's hand closes on the binnacle at (x, y, z) as binnacle() builds it: the centre
+// of the single T-grip, or the starboard ball knob of a twin. Its axis runs across the boat.
+export function throttleGrip(x, y, z, twin) {
+  return twin ? v3(x - 0.058, y + 0.25, z + 0.038) : v3(x - 0.055, y + 0.246, z);
+}
+
 // Handset on a clip, with a coiled cord down to the panel; normal is the face it hangs on (+-z or -x).
 function vhfHandset(group, m, at, normal) {
   const across = Math.abs(normal.z) > 0.5 ? v3(1, 0, 0) : v3(0, 0, 1);
@@ -991,14 +998,15 @@ export function hardtopHelm(group, m, { C, hw, wallZ }, { twin = false } = {}) {
   // Footrest bar under the helm on the bulkhead.
   add(group, tube([v3(xB, DECK_Y + 0.22, zw - 0.2), v3(xB - 0.13, DECK_Y + 0.24, zw - 0.17), v3(xB - 0.13, DECK_Y + 0.24, zw + 0.17), v3(xB, DECK_Y + 0.22, zw + 0.2)], 0.0125, 16, 6), m.stainless);
 
-  // Helm and passenger seats, cushion front about a third of a metre aft of the wheel rim.
-  const seatX = wheel.rim.x - 0.6;
+  // Helm and passenger seats, cushion front about a quarter of a metre aft of the wheel rim, so
+  // the helmsman reaches the throttle on the dash top from the seat with a modest lean.
+  const seatX = wheel.rim.x - 0.48;
   // Seats 0.5 m wide with 0.4 m footrest rings need 0.54 m between centres: on the narrow 550
   // cabin they sit a little outboard of the wheel line rather than touch.
   const seatZ = Math.max(zw, 0.27);
   pedestalSeat(group, m, hm, seatX, seatZ);
   pedestalSeat(group, m, hm, seatX, -seatZ);
-  return { wheel, throttle: v3(xT + 0.05, yDeck + 0.15, zThr), seat: v3(seatX, DECK_Y + 0.63, seatZ) };
+  return { wheel, throttle: throttleGrip(xT + 0.115, yDeck, zThr, twin), seat: v3(seatX, DECK_Y + 0.63, seatZ) };
 }
 
 // Rounded-top doorway outline in the bulkhead's shape plane (X = -z, Y = y), grown by g.
@@ -1088,7 +1096,7 @@ export function consoleHelm(group, m, { cx0, top, Wc, yTop, postX }, { twin = fa
   add(group, tube([v3(cx0 + 0.005, DECK_Y + 0.2, -0.28), v3(cx0 - 0.12, DECK_Y + 0.22, -0.25), v3(cx0 - 0.12, DECK_Y + 0.22, 0.25), v3(cx0 + 0.005, DECK_Y + 0.2, 0.28)], 0.0125, 16, 6), m.stainless);
 
   leaningPost(group, m, hm, postX);
-  return { wheel, throttle: v3(cx0 + 0.04, yTop(cx0 + 0.11) + 0.15, thrZ), stand: postX + 0.08 };
+  return { wheel, throttle: throttleGrip(cx0 + 0.11, yTop(cx0 + 0.11) - 0.003, thrZ, twin), stand: postX + 0.08 };
 }
 
 // Leaning post: moulded tackle module with drawers on its aft face, vinyl bolster on top,
