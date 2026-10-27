@@ -273,6 +273,22 @@ function vinylEdgeNormal(name) {
 // Gloss cast vinyl: satin-gloss against the mirror clearcoat around it, so a reflection running
 // across the name softens as it crosses the letters. One per name and colour, kept for the page.
 const decalCache = new Map();
+// Canvas text does not repaint itself after a font download. Start with the fallback, then
+// update just the cached colour/normal textures once the two lettering weights are ready.
+export async function refreshDecalFonts() {
+  try {
+    await Promise.all([400, 600].map((weight) => document.fonts.load(LETTER_FONT(weight), 'HARBOUR 620')));
+    for (const [key, material] of decalCache) {
+      const [name, colour] = key.split('|');
+      material.map.dispose();
+      material.normalMap.dispose();
+      material.map = nameTexture(name, colour);
+      material.normalMap = vinylEdgeNormal(name);
+    }
+  } catch {
+    // An unavailable font leaves readable fallback lettering and a working configurator.
+  }
+}
 function decalMaterial(name, colour) {
   const key = `${name}|${colour}`;
   if (!decalCache.has(key)) {

@@ -59,7 +59,16 @@ renderer.clippingPlanes = openClip;
 export const scene = new THREE.Scene();
 
 const pmrem = new THREE.PMREMGenerator(renderer);
-const studioEnv = pmrem.fromScene(studioEnvironment(), 0.02).texture;
+let studioEnv = null;
+function prepareStudio() {
+  if (studioEnv) return;
+  const environment = studioEnvironment();
+  studioEnv = pmrem.fromScene(environment, 0.02).texture;
+  environment.traverse((o) => {
+    o.geometry?.dispose();
+    o.material?.dispose();
+  });
+}
 
 // A dark photographic studio: graded walls and floor, a big overhead softbox, tall strip
 // boxes either side and a cool rim strip behind, so metal and clearcoat pick up clean
@@ -222,6 +231,12 @@ function restoreLit(part) {
 }
 export async function revealLit(camera) {
   if (litReady) return;
+  if (!onWater) {
+    prepareStudio();
+    scene.environment = studioEnv;
+    contact.bake();
+    contact.mesh.visible = true;
+  }
   const probe = new THREE.Scene();
   const seen = new Set();
   for (const part of [current.boat, current.trailer, current.cradle]) {
@@ -417,8 +432,10 @@ function applyScene(build) {
     whiteWater.build(whiteWaterRows(current.lines, current.boat, underwayTrim(current.lines, build).bow));
   }
 
-  floor.visible = contact.mesh.visible = !onWater;
+  floor.visible = !onWater;
+  contact.mesh.visible = !onWater && litReady;
   wet.uWetOn.value = onWater ? 1 : 0;
+  if (!onWater && litReady) prepareStudio();
   scene.environment = onWater ? sea.waterEnv : studioEnv;
   scene.environmentIntensity = onWater ? 0.75 : 0.8;
   // Studio: Khronos PBR Neutral keeps paint hues true (ACES pushes red to crimson and navy to
@@ -449,7 +466,7 @@ function applyScene(build) {
   key.target.position.set(0, 0, 0);
   fitKeyShadow();
   if (sea) u.uGlowOn.value = onWater && current.leds.length ? 1 : 0;
-  if (!onWater) contact.bake();
+  if (!onWater && litReady) contact.bake();
   if (skipper) skipper.root.visible = onWater;
   if (onWater) {
     sea.loadSkipper().then((s) => {
@@ -955,7 +972,9 @@ function createPost() {
       if (target.width !== size.x || target.height !== size.y) target.setSize(size.x, size.y);
       renderer.setRenderTarget(target);
       renderer.render(scene, camera);
-      const on = qaAO !== '0';
+      // Clay needs neither lighting nor occlusion. Avoid compiling the full AO pipeline
+      // before the first useful frame; the final image still uses the same quality settings.
+      const on = litReady && qaAO !== '0';
       material.uniforms.tAO.value = on ? occlusion(camera) : null;
       material.uniforms.uAO.value = on ? (onWater ? AO.water : AO.studio) : 0;
       renderer.setRenderTarget(null);
@@ -966,11 +985,12 @@ function createPost() {
 
 // One shadow update, the reflection when afloat, then the frame itself.
 const bufferSize = new THREE.Vector2();
+let litFrameDrawn = false;
 export function renderFrame(camera) {
   frameCamera = camera;
   if (paused) return;
   if (qaPerf) qaPerf.camera = camera;
-  renderer.shadowMap.needsUpdate = true;
+  renderer.shadowMap.needsUpdate = litReady;
   if (onWater) {
     sea.spray.setScale(renderer.getDrawingBufferSize(bufferSize).y * camera.projectionMatrix.elements[5] / 2);
     renderReflection(camera);
@@ -978,6 +998,10 @@ export function renderFrame(camera) {
   }
   if (post) post.render(camera);
   else renderer.render(scene, camera);
+  if (litReady && !litFrameDrawn) {
+    performance.mark('lit-frame');
+    litFrameDrawn = true;
+  }
 }
 
 // Copies the frame in the same task it is rendered, over the studio backdrop the CSS draws.

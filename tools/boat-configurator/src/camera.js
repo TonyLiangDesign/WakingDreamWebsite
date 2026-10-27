@@ -148,18 +148,24 @@ function rigPoints() {
 // thousands, which makes the fits cheap enough to redo for every heading on every resize.
 function hullPoints(points, centre) {
   const keep = new Set();
+  // Pack once, rather than dereference Vector3 objects and subtract the centre in each of
+  // the 400 support searches. Float64 preserves the original projection precision.
+  const xyz = new Float64Array(points.length * 3);
+  for (let j = 0; j < points.length; j++) {
+    xyz[j * 3] = points[j].x - centre.x;
+    xyz[j * 3 + 1] = points[j].y - centre.y;
+    xyz[j * 3 + 2] = points[j].z - centre.z;
+  }
   const n = 400;
-  const dir = new THREE.Vector3();
   for (let i = 0; i < n; i++) {
     const y = 1 - (2 * (i + 0.5)) / n;
     const r = Math.sqrt(1 - y * y);
     const a = i * Math.PI * (3 - Math.sqrt(5));
-    dir.set(Math.cos(a) * r, y, Math.sin(a) * r);
+    const x = Math.cos(a) * r, z = Math.sin(a) * r;
     let best = 0, bestV = -Infinity;
-    for (let j = 0; j < points.length; j++) {
-      const p = points[j];
-      const v = (p.x - centre.x) * dir.x + (p.y - centre.y) * dir.y + (p.z - centre.z) * dir.z;
-      if (v > bestV) { bestV = v; best = j; }
+    for (let j = 0; j < xyz.length; j += 3) {
+      const v = xyz[j] * x + xyz[j + 1] * y + xyz[j + 2] * z;
+      if (v > bestV) { bestV = v; best = j / 3; }
     }
     keep.add(best);
   }
@@ -284,7 +290,9 @@ function spinTable() {
 // The spin fit at any azimuth, interpolated between table entries (with a hair of margin for
 // the interpolation).
 function spinAt(az) {
-  const { table } = spinTable();
+  // The first still frame needs one fit, not a complete 144-view turntable.
+  if (!spin) return fit(spinDir(az), camera.aspect, safe);
+  const { table } = spin;
   const u = ((((az / (Math.PI * 2)) % 1) + 1) % 1) * SPIN_STEPS;
   const i = Math.floor(u);
   const f = u - i;
@@ -309,7 +317,7 @@ export function viewTargets(name, { aspect, area } = {}) {
 function setLimits() {
   if (qaHeld) return;
   let far = 0;
-  for (const e of spinTable().table) far = Math.max(far, e.d);
+  if (spin) for (const e of spin.table) far = Math.max(far, e.d);
   for (const name of Object.keys(VIEWS)) {
     const v = viewTargets(name);
     far = Math.max(far, v.pos.distanceTo(v.target));
@@ -446,7 +454,11 @@ export function stepCamera() {
     return;
   }
   // Auto-rotate: ease target, distance and elevation along the spin table at this heading.
-  if (controls.autoRotate && framed && VIEWS[framed].spin && current) {
+  if (controls.autoRotate && framed && VIEWS[framed].spin && current && spinClock > 0) {
+    if (!spin) {
+      spinTable();
+      setLimits();
+    }
     off.subVectors(camera.position, controls.target);
     const { target, d } = spinAt(Math.atan2(off.x, off.z));
     const k = 1 - Math.exp(-dt / 0.35);

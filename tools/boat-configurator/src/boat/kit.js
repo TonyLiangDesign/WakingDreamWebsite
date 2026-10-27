@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 // Shared geometry helpers for every part of the boat. Pure functions of their arguments:
 // they make meshes and geometry and know nothing about the Harbour itself.
@@ -151,21 +150,48 @@ export function mergeStatic(group) {
   const buckets = new Map();
   group.traverse((mesh) => {
     if (!mesh.isMesh) return;
-    const key = `${mesh.material.uuid}|${mesh.castShadow}`;
-    if (!buckets.has(key)) buckets.set(key, { material: mesh.material, cast: mesh.castShadow, parts: [] });
-    let geo = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
-    for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geo.deleteAttribute(name);
-    if (!geo.attributes.uv) geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array((geo.attributes.position.count) * 2), 2));
-    geo.clearGroups();
-    geo.applyMatrix4(mesh.matrixWorld);
-    buckets.get(key).parts.push(geo);
-    mesh.geometry.dispose();
+    const key = `${mesh.material.uuid}|${mesh.castShadow}|${mesh.receiveShadow}`;
+    if (!buckets.has(key)) buckets.set(key, { material: mesh.material, cast: mesh.castShadow, receive: mesh.receiveShadow, parts: [], vertices: 0, indices: 0 });
+    const bucket = buckets.get(key);
+    bucket.parts.push(mesh);
+    bucket.vertices += mesh.geometry.attributes.position.count;
+    bucket.indices += mesh.geometry.index?.count ?? mesh.geometry.attributes.position.count;
   });
   const out = new THREE.Group();
-  for (const { material, cast, parts } of buckets.values()) {
-    const merged = mergeGeometries(parts, false);
-    for (const part of parts) part.dispose();
-    add(out, merged, material, { cast });
+  const v = new THREE.Vector3();
+  const normalMatrix = new THREE.Matrix3();
+  const disposed = new Set();
+  for (const { material, cast, receive, parts, vertices, indices } of buckets.values()) {
+    // Allocate final GPU buffers once. Keep shared vertices instead of expanding every
+    // triangle, cloning each part, then copying the clones into another merged allocation.
+    const position = new Float32Array(vertices * 3);
+    const normal = new Float32Array(vertices * 3);
+    const uv = new Float32Array(vertices * 2);
+    const index = vertices > 65535 ? new Uint32Array(indices) : new Uint16Array(indices);
+    let vertexOffset = 0, indexOffset = 0;
+    for (const mesh of parts) {
+      const g = mesh.geometry;
+      const p = g.attributes.position, n = g.attributes.normal, t = g.attributes.uv;
+      normalMatrix.getNormalMatrix(mesh.matrixWorld);
+      for (let i = 0; i < p.count; i++) {
+        const j = vertexOffset + i;
+        v.fromBufferAttribute(p, i).applyMatrix4(mesh.matrixWorld).toArray(position, j * 3);
+        if (n) v.fromBufferAttribute(n, i).applyNormalMatrix(normalMatrix).toArray(normal, j * 3);
+        if (t) { uv[j * 2] = t.getX(i); uv[j * 2 + 1] = t.getY(i); }
+      }
+      const count = g.index?.count ?? p.count;
+      for (let i = 0; i < count; i++) index[indexOffset + i] = vertexOffset + (g.index ? g.index.getX(i) : i);
+      vertexOffset += p.count;
+      indexOffset += count;
+      disposed.add(g);
+    }
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    merged.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+    merged.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    merged.setIndex(new THREE.BufferAttribute(index, 1));
+    add(out, merged, material, { cast, receive });
   }
+  for (const geometry of disposed) geometry.dispose();
   return out;
 }

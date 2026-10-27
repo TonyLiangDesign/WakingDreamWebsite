@@ -5,6 +5,8 @@ import {
 import { reduceMotion, stage, mountBoat, resizeRenderer, renderFrame, snapshot, startLoop, revealLit, seaReady, loadSea, qaCompileHandles } from './scene.js';
 import { qaHold, camera, controls, flyTo, startSpin, rigChanged, resizeCamera, stepCamera, specShot, rigOnScreen } from './camera.js';
 import './style.css';
+import './fonts.css';
+import { refreshDecalFonts } from './boat/hull.js';
 
 // UI wiring only: options panel, price modes, dealer quote, spec sheet, kiosk. The 3D side is
 // scene.js (world, boat, water, loop) and camera.js (views and framing).
@@ -387,7 +389,11 @@ for (const el of [stage, $('.stage-top'), $('.stage-views'), attract]) stageObse
 if (matchMedia('(max-width: 979px)').matches) $('.builder').open = false;
 renderControls();
 syncControls();
-document.fonts.ready.then(async () => {
+// Font downloads must never hold up the boat. Refit text overlays and repaint its lettering
+// when the real fonts arrive, without throwing away or rebuilding any geometry.
+document.fonts.ready.then(resize);
+refreshDecalFonts();
+{
   performance.mark('rebuild-start');
   rebuild();
   performance.mark('rebuild-end');
@@ -410,6 +416,9 @@ document.fonts.ready.then(async () => {
   // link the real materials in the background and show them when they are ready (scene.js).
   requestAnimationFrame(() => requestAnimationFrame(() => {
     performance.mark('first-frames');
+    $('#loading').addEventListener('transitionend', (event) => {
+      if (event.target.id === 'loading' && event.propertyName === 'opacity') performance.mark('boat-visible');
+    });
     $('#loading').classList.add('done');
     revealLit(camera);
   }));
@@ -419,4 +428,4 @@ document.fonts.ready.then(async () => {
   if (qaScroll) scrollTo(0, qaScroll);
   if (params.has('qaCompile')) window.qaCompile = qaCompileHandles(camera);
   if (qaView || qaScroll) setInterval(() => { document.body.dataset.qaFrame = JSON.stringify(rigOnScreen()); }, 250);
-});
+}
