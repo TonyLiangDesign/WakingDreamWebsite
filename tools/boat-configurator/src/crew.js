@@ -5,10 +5,9 @@ import { DECK_Y } from './boat/hull.js';
 
 // The skipper, shown on the water only: a rigged figure (Mixamo skeleton, 14k triangles, faces
 // +Z as authored) at the helm. A stored base pose sets the spine, head and gripping fingers; then
-// two-bone IK puts his hands on the wheel rim at ten and two and his feet flat on the cockpit
-// floor. At a
-// centre console he stands with his seat against the leaning post's bolster, a hand's breadth
-// behind the wheel; under a hardtop he sits on the starboard helm seat.
+// two-bone IK puts his hands on the wheel rim at ten and two. Under a hardtop he sits on the
+// starboard helm seat, feet flat on the cockpit floor; at a centre console he perches on the
+// leaning post's bolster with his feet on its footrest bar.
 //   loadSkipper()             -> Promise<skipper>, fetched once, the first time the water shows
 //   placeSkipper(s, helm)     poses s for the anchors helm.js returns (boat coordinates)
 //   skipper.root              add it to the frame the boat is built in
@@ -147,10 +146,11 @@ function wristFor(b, side, grip, fwdWorld) {
   return grip.clone().addScaledVector(fwdWorld, -GRIP_ALONG).addScaledVector(palm, -GRIP_IN);
 }
 
-// helm: { wheel: { rim, axis, radius }, throttle, seat | stand } in boat coordinates; root must
-// already be in its boat frame (the scene graph above it is used for world positions).
-//   Seated (hardtop): a little forward on the cushion, sitting up with a slight lean to the wheel.
-//   Standing (console): seat against the leaning post's bolster, nearly upright.
+// helm: { wheel: { rim, axis, radius }, throttle, seat, footrest? } in boat coordinates; root
+// must already be in its boat frame (the scene graph above it is used for world positions).
+//   A little forward on the cushion, sitting up with a slight lean to the wheel. Feet on the
+//   footrest bar where there is one (the console's leaning post is too high for the floor),
+//   otherwise flat on the floor.
 //   Left hand closed round the rim at ten o'clock, thumb up the rim; right hand its mirror at
 //   two o'clock. (The throttle grip is left alone: on both layouts it sits at or above shoulder
 //   height, and reaching it put the arm straight out at head height.) Each hand is turned to
@@ -161,36 +161,31 @@ export function placeSkipper(s, helm) {
   for (const [name, q] of Object.entries(pose.bones)) b[name]?.quaternion.fromArray(q);
   b.Hips.position.fromArray(pose.hips);
   const { rim, axis, radius } = helm.wheel;
-  const seated = !!helm.seat;
-  // The figure's own origin is under his hips. Standing, the hip joint is a tenth of a metre
-  // forward of the leaning post's face: the back of his seat rests on the bolster, and his belly
-  // stays a hand's breadth behind the bottom of the rim.
-  const hipX = seated ? helm.seat.x + 0.06 : helm.stand + 0.1;
-  root.position.set(hipX, DECK_Y, seated ? helm.seat.z : rim.z + 0.04);
+  // The figure's own origin is under his hips. The hip joint sits 9 cm over the cushion, a
+  // little forward of its middle, so his thighs lie along the cushion and his back sits clear
+  // of the backrest.
+  const hipX = helm.seat.x + 0.06;
+  root.position.set(hipX, DECK_Y, helm.seat.z);
   root.updateMatrixWorld(true);
-
-  // Seated: the hip joint 9 cm over the cushion, a little forward of its middle, so his thighs
-  // lie along the cushion and his back sits clear of the backrest.
-  if (seated) {
-    const hip = boatPoint(root, v3(hipX, helm.seat.y + 0.09, helm.seat.z));
-    b.Hips.parent.updateMatrixWorld(true);
-    b.Hips.position.copy(b.Hips.parent.worldToLocal(hip));
-    b.Hips.updateMatrixWorld(true);
-  }
+  const hip = boatPoint(root, v3(hipX, helm.seat.y + 0.09, helm.seat.z));
+  b.Hips.parent.updateMatrixWorld(true);
+  b.Hips.position.copy(b.Hips.parent.worldToLocal(hip));
+  b.Hips.updateMatrixWorld(true);
 
   const up = v3(0, 1, 0).transformDirection(root.parent.matrixWorld);
   const fwd = v3(1, 0, 0).transformDirection(root.parent.matrixWorld);
   const right = v3(0, 0, 1).transformDirection(root.parent.matrixWorld);
-  // He leans into the wheel from the waist: about 6 degrees standing, about 15 seated, and
-  // keeps his head up to look out over the bow.
-  const lean = seated ? -0.26 : -0.1;
+  // He leans into the wheel from the waist, about 15 degrees, and keeps his head up to look
+  // out over the bow.
+  const lean = -0.26;
   turn(b.Spine, right, lean);
   turn(b.Neck, right, -lean * 0.7);
-  // Feet: flat on the floor, ankles 8 cm up. Standing, just ahead of the hips, with the heels
-  // clear of the leaning post's footrest bar; seated, far enough forward of the hips that the
-  // knees bend without the shins going vertical. Knees towards the bow (and up, seated).
+  // Feet: soles on the footrest bar, or flat on the floor far enough forward of the hips that
+  // the knees bend without the shins going vertical; ankles 8 cm over the sole. Knees towards
+  // the bow and up.
+  const sole = helm.footrest ? [helm.footrest.x, helm.footrest.y] : [hipX + 0.37, DECK_Y];
   for (const [k, sgn] of [['Left', -1], ['Right', 1]]) {
-    const foot = boatPoint(root, v3(hipX + (seated ? 0.37 : 0.04), DECK_Y + 0.085, root.position.z + sgn * (seated ? 0.13 : 0.15)));
+    const foot = boatPoint(root, v3(sole[0], sole[1] + 0.085, root.position.z + sgn * 0.13));
     reach(b[`${k}UpLeg`], b[`${k}Leg`], b[`${k}Foot`], foot, fwd.clone().addScaledVector(right, sgn * 0.25));
   }
 

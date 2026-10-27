@@ -17,8 +17,9 @@ import { roundLoop, offsetLoop } from './cabin.js';
 // consoleHelm() receives the placement returned by console.js: { cx0, top, Wc, yTop(x), postX }.
 // Both take an optional { twin } as a fourth argument for the dual binnacle, and both return the
 // helmsman's anchors for the skipper (crew.js): { wheel: { rim, axis, radius }, throttle (the
-// grip), and seat (hardtop: helm cushion centre, top surface) or stand (console: the leaning
-// post's front face x) }.
+// grip), seat (the cushion he sits on, centre of its top surface: the helm seat under the
+// hardtop, the leaning post's bolster at the console) and, at the console, footrest (the top of
+// the leaning post's footrest bar, where his feet go when he perches on the bolster) }.
 // Hardtop: the dash is moulded wall to wall under the screen foot and fitted to the walls'
 // taper; the helm pod stands proud on starboard over an open footwell, the passenger side is a
 // shallow dash with a grab rail over the cuddy entrance in the forward bulkhead.
@@ -1095,14 +1096,15 @@ export function consoleHelm(group, m, { cx0, top, Wc, yTop, postX }, { twin = fa
   vhfHandset(group, m, v3(cx0 - 0.002, yA - 0.2, thrZ), v3(-1, 0, 0));
   add(group, tube([v3(cx0 + 0.005, DECK_Y + 0.2, -0.28), v3(cx0 - 0.12, DECK_Y + 0.22, -0.25), v3(cx0 - 0.12, DECK_Y + 0.22, 0.25), v3(cx0 + 0.005, DECK_Y + 0.2, 0.28)], 0.0125, 16, 6), m.stainless);
 
-  leaningPost(group, m, hm, postX);
-  return { wheel, throttle: throttleGrip(cx0 + 0.11, yTop(cx0 + 0.11) - 0.003, thrZ, twin), stand: postX + 0.08 };
+  const post = leaningPost(group, m, hm, postX);
+  return { wheel, throttle: throttleGrip(cx0 + 0.11, yTop(cx0 + 0.11) - 0.003, thrZ, twin), ...post };
 }
 
 // Leaning post: moulded tackle module with drawers on its aft face, vinyl bolster on top,
 // stainless frame carrying the backrest and a top rail (the rocket launcher option sits on it,
 // at postX - 0.3, DECK_Y + 1.26), rod holders on the module's outboard sides and a footrest bar
-// in front.
+// in front. Returns the skipper's anchors on it: seat (centre of the bolster's top) and footrest
+// (top of the bar).
 function leaningPost(group, m, hm, postX) {
   const xp = postX - 0.12;
   const W = 0.72;
@@ -1137,6 +1139,7 @@ function leaningPost(group, m, hm, postX) {
     for (const dz of [-0.065, 0.065]) rod(group, v3(xF - 0.006, yp, dz), v3(xpull, yp, dz), 0.0045, m.stainless, 8);
   }
   // Bolster: upholstered to match the helm seats, a little crown, pleats running fore and aft.
+  const bolsterTop = yBase - 0.006 + 0.12 + 0.012;
   placePad(group, hm, pad(0.3, W - 0.02, 0.12, {
     rh: 0.05, rv: 0.05, rb: 0.012, crown: 0.012, dish: 0.012, panel: [0.6, 0.7], channels: 6, seamAxis: 'z', piping: true,
   }), v3(xp + 0.03, yBase - 0.006, 0));
@@ -1190,4 +1193,5 @@ function leaningPost(group, m, hm, postX) {
   }
   // Footrest bar across the front.
   add(group, tube([v3(xp + 0.198, DECK_Y + 0.2, -0.27), v3(xp + 0.27, DECK_Y + 0.21, -0.24), v3(xp + 0.27, DECK_Y + 0.21, 0.24), v3(xp + 0.198, DECK_Y + 0.2, 0.27)], 0.0125, 16, 6), m.stainless);
+  return { seat: v3(xp + 0.03, bolsterTop, 0), footrest: v3(xp + 0.27, DECK_Y + 0.21 + 0.0125, 0) };
 }
