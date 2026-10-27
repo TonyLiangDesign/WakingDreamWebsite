@@ -49,10 +49,21 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
   border-bottom: 1px solid var(--line);
   background: var(--bg);
 }
-.wordmark { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap; }
-.wordmark span { color: var(--text-mute); font-weight: 400; }
+/* The site's navigation (styles.css at the root), on the configurator's own top bar. */
+.wordmark { font-size: 0.7rem; font-weight: 500; letter-spacing: 0.24em; text-transform: uppercase; color: var(--text); white-space: nowrap; }
+.wordmark span { color: var(--text-mute); }
+.site-nav { margin-left: auto; }
+.site-nav ul { display: flex; gap: clamp(14px, 3vw, 32px); margin: 0; padding: 0; list-style: none; }
+.site-nav li a { font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-soft); padding: 6px 0; border-bottom: 1px solid transparent; white-space: nowrap; transition: color 150ms ease, border-color 150ms ease; }
+.site-nav li a:hover { color: var(--text); }
+.site-nav li a[aria-current="page"] { color: var(--text); border-bottom-color: var(--accent); }
+@media (max-width: 700px) {
+  .topbar { flex-wrap: wrap; height: auto; padding: 12px 20px 10px; gap: 6px 16px; }
+  .site-nav { width: 100%; margin-left: 0; }
+  .site-nav ul { justify-content: space-between; gap: 10px; }
+  .site-nav li a { font-size: 0.64rem; letter-spacing: 0.1em; }
+}
 @media (max-width: 520px) { .wordmark span { display: none; } }
-@media (max-width: 420px) { .pill-long { display: none; } }
 .pill { padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-soft); white-space: nowrap; }
 
 /* ---------- layout ---------- */
@@ -99,6 +110,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visibl
 .stage-scene { display: flex; padding: 3px; border: 1px solid var(--line); border-radius: 999px; background: rgba(11, 11, 12, 0.55); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); pointer-events: auto; }
 .stage-scene button { min-height: 34px; padding: 4px 14px; border: 0; border-radius: 999px; background: transparent; font-size: 0.7rem; letter-spacing: 0.08em; color: var(--text-soft); white-space: nowrap; cursor: pointer; transition: background-color 160ms ease, color 160ms ease; }
 .stage-scene button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+.stage-scene button[aria-busy="true"] { opacity: 0.55; cursor: progress; }
 .stage-scene .short { display: none; }
 .scene-note { margin: 0 8px 0 0; font-size: 0.66rem; color: var(--text-soft); text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5); white-space: nowrap; }
 
@@ -312,7 +324,7 @@ dialog#lead { overflow-y: auto; }
 
 .kiosk-exit { display: none; background: transparent; cursor: pointer; }
 .kiosk .kiosk-exit { display: inline-flex; align-items: center; }
-.kiosk .topbar .pill:not(.kiosk-exit), .kiosk .pitch, .kiosk .builder, .kiosk #copy-link, .kiosk #save-image, .kiosk .stage-hint { display: none; }
+.kiosk .topbar .site-nav, .kiosk .pitch, .kiosk .builder, .kiosk #copy-link, .kiosk #save-image, .kiosk .stage-hint { display: none; }
 body.kiosk { --panel: 500px; font-size: 17px; }
 .kiosk .actions { grid-template-columns: 1fr; }
 .kiosk .btn { min-height: 54px; font-size: 0.74rem; }

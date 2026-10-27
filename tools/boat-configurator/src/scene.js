@@ -4,9 +4,7 @@ import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { resolve } from './config.js';
 import { createMaterials, applyBuild } from './materials.js';
 import { buildBoat, disposeTree, TRAILER_LIFT, CRADLE_LIFT } from './boat/index.js';
-import { createSky, createWater, createUnderwater, waterlineUniforms, wetMaterial, seaHeight, SUN_DIR, WL_STATIONS } from './water.js';
-import { createSpray, createWhiteWater } from './spray.js';
-import { loadSkipper, placeSkipper } from './crew.js';
+import { waterlineUniforms, wetMaterial, SUN_DIR, WL_STATIONS } from './wet.js';
 
 // Renderer, environments, lights, studio floor and contact shadow, sky and water, the boat's
 // place in the scene (running trim and motion), the water reflection pass and the render loop.
@@ -15,10 +13,13 @@ import { loadSkipper, placeSkipper } from './crew.js';
 //   Studio: a dark softbox environment (so bare alloy reads as metal), key / fill / rim lights,
 //           a soft directional floor shadow plus a contact shadow baked once per build.
 //   Water:  the golden-hour sky as environment, the sun as key, a planar reflection rendered at
-//           reduced resolution each frame. The boat is shown underway, held in place while the
+//           reduced resolution each frame. The sky, sea, spray, white water and skipper (sea.js)
+//           are fetched and built the first time a build asks for the water (loadSea), so the
+//           page starts on the boat alone; until they arrive a water build shows in the studio. The boat is shown underway, held in place while the
 //           sea streams past: planing trim solved from the hull lines, a light chop in its
 //           motion, the wake in the water shader, the spray and white water (spray.js).
 
+performance.mark('scene-module-start');
 const lerp = THREE.MathUtils.lerp;
 const clamp = THREE.MathUtils.clamp;
 export const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -31,6 +32,8 @@ const lowPower = matchMedia('(max-width: 700px), (pointer: coarse)').matches
 // QA: ?qaAO=0 keeps the desktop pipeline but switches the occlusion off (for A/B and timings);
 // ?qaAO=view shows the occlusion buffer itself.
 const qaAO = new URLSearchParams(location.search).get('qaAO');
+// QA: ?qaNoAsync skips the off-thread shader compile before the first frame (for A/B timings).
+const qaNoAsync = new URLSearchParams(location.search).has('qaNoAsync');
 // QA: ?qaPerf exposes window.qaPerf.frame() (one synchronous frame of the live scene) for timing.
 const qaPerf = new URLSearchParams(location.search).has('qaPerf') ? (window.qaPerf = { camera: null, frame: () => renderFrame(qaPerf.camera) }) : null;
 
@@ -45,24 +48,18 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 // One shadow update per frame, shared by the reflection pass and the main render.
 renderer.shadowMap.autoUpdate = false;
+// One clipping plane is always set: the surface in the reflection pass, and far below everything
+// otherwise. Programs are built per clipping-plane count, so this keeps the two passes on one
+// set of boat programs instead of compiling a second one for the reflection.
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const mirrorClip = [new THREE.Plane(Y_AXIS.clone(), 0)];
+const openClip = [new THREE.Plane(Y_AXIS.clone(), 1e4)];
+renderer.clippingPlanes = openClip;
 
 export const scene = new THREE.Scene();
 
 const pmrem = new THREE.PMREMGenerator(renderer);
 const studioEnv = pmrem.fromScene(studioEnvironment(), 0.02).texture;
-const envScene = new THREE.Scene();
-const envSky = createSky();
-envSky.geometry = new THREE.SphereGeometry(50, 32, 16);
-// The environment is a desaturated copy of the visible sky. Clearcoat on dark topsides mirrors
-// its horizon, and a full-strength sunset horizon turns navy and charcoal brown; decks and roofs
-// take their diffuse light from its zenith, and a full blue zenith turns white surfaces blue
-// (the sun is only about 10 degrees up, so the key adds little to them). The warmth and the blue
-// stay in the sun, the key light and the visible sky.
-envSky.material.uniforms.uHorizon.value.set('#ddd3c9');
-envSky.material.uniforms.uAnti.value.set('#aeb9c6');
-envSky.material.uniforms.uTop.value.set('#a6a9ad');
-envScene.add(envSky);
-const waterEnv = pmrem.fromScene(envScene, 0.02).texture;
 
 // A dark photographic studio: graded walls and floor, a big overhead softbox, tall strip
 // boxes either side and a cool rim strip behind, so metal and clearcoat pick up clean
@@ -129,13 +126,58 @@ scene.add(floor);
 const contact = createContactShadow();
 scene.add(contact.mesh);
 
-const sky = createSky();
-const water = createWater({ detail: lowPower ? 0 : 1 });
-const underwater = createUnderwater();
-const spray = createSpray({ count: lowPower ? 2500 : 7000 });
-const whiteWater = createWhiteWater({ detail: lowPower ? 0 : 1 });
-scene.add(sky, water, underwater, spray.object, whiteWater.mesh);
 const wet = waterlineUniforms();
+
+// ---------- the sea, loaded on demand ----------
+
+// sea (sea.js) holds the sky, water, underwater floor, spray, white water, the sky-lit environment
+// and the skipper loader. null until the first water build asks for it; loadSea() fetches the
+// chunk once, builds it, compiles its shaders off the main thread and then shows the water if the
+// latest build still wants it. Frames are held (paused) while those shaders link, so the studio
+// frame stays up instead of a half-compiled one.
+let sea = null;
+let seaLoading = null;
+let paused = false;
+let lastBuild = null;
+let frameCamera = null;
+export const seaReady = () => !!sea;
+export function loadSea() {
+  if (!seaLoading) {
+    seaLoading = import('./sea.js').then(async (m) => {
+      const built = m.createSea({ pmrem, lowPower, mirrorTexture: mirrorRT.texture });
+      scene.add(built.sky, built.water, built.underwater, built.spray.object, built.whiteWater.mesh);
+      built.water.material.uniforms.uTexel.value.set(1 / mirrorRT.width, 1 / mirrorRT.height);
+      sea = built;
+      if (lastBuild?.scene === 'water') {
+        paused = true;
+        try {
+          applyScene(lastBuild);
+          if (frameCamera) await compileScene(frameCamera);
+        } finally {
+          paused = false;
+        }
+      }
+      return sea;
+    });
+  }
+  return seaLoading;
+}
+
+// Links every program the scene needs, in parallel and off the main thread where the browser
+// allows (KHR_parallel_shader_compile), so a first visit never freezes on shader compiles. The
+// desktop pipeline renders into a target, where materials carry no tone mapping, so they are
+// compiled that way.
+export async function compileScene(camera) {
+  if (qaNoAsync) return;
+  // The desktop pipeline draws the scene into its HDR target (linear, no tone mapping): compile
+  // with that target bound so the programs built are the ones the frame uses.
+  if (post) renderer.setRenderTarget(post.target);
+  try {
+    await renderer.compileAsync(scene, camera);
+  } finally {
+    renderer.setRenderTarget(null);
+  }
+}
 
 // vessel (bobs on the water) > offset (centres the hull) > boat; stands stay put.
 export const vessel = new THREE.Group();
@@ -155,6 +197,7 @@ let trim = 0;
 
 // Swaps in a freshly built boat for build and sets the scene up for it.
 export function mountBoat(build) {
+  lastBuild = build;
   if (current) {
     offset.remove(current.boat);
     stand.remove(current.trailer, current.cradle);
@@ -167,7 +210,6 @@ export function mountBoat(build) {
   stand.add(current.trailer, current.cradle);
   offset.position.x = -current.lines.L / 2;
   stand.position.x = -current.lines.L / 2;
-  stage.dataset.scene = build.scene;
   applyScene(build);
 }
 
@@ -263,12 +305,16 @@ function waterlineHalfWidth(lines, t, y) {
 }
 
 function applyScene(build) {
-  onWater = build.scene === 'water';
+  // A water build before the sea has arrived shows in the studio and asks for the sea.
+  onWater = build.scene === 'water' && !!sea;
+  if (build.scene === 'water' && !sea) loadSea();
+  stage.dataset.scene = onWater ? 'water' : 'studio';
   const onTrailer = !onWater && build.options.includes('trailer');
   const { L } = current.lines;
   current.trailer.visible = onTrailer;
   current.cradle.visible = !onWater && !onTrailer;
-  const u = water.material.uniforms;
+  const { water, sky, underwater, spray, whiteWater } = sea || {};
+  const u = water?.material.uniforms;
   if (onWater) {
     const a = underwayTrim(current.lines, build);
     trim = a.angle;
@@ -291,19 +337,21 @@ function applyScene(build) {
   }
   vessel.position.y = lift;
   vessel.rotation.set(0, 0, trim);
-  u.uRun.value = onWater ? 1 : 0;
-  spray.object.visible = onWater;
-  whiteWater.mesh.visible = onWater;
+  if (sea) {
+    u.uRun.value = onWater ? 1 : 0;
+    spray.object.visible = onWater;
+    whiteWater.mesh.visible = onWater;
+    sky.visible = water.visible = underwater.visible = onWater;
+  }
   if (onWater) {
     vessel.updateMatrixWorld(true);
     spray.warm(current.boat, UNDERWAY.speed);
     whiteWater.build(whiteWaterRows(current.lines, current.boat, underwayTrim(current.lines, build).bow));
   }
 
-  sky.visible = water.visible = underwater.visible = onWater;
   floor.visible = contact.mesh.visible = !onWater;
   wet.uWetOn.value = onWater ? 1 : 0;
-  scene.environment = onWater ? waterEnv : studioEnv;
+  scene.environment = onWater ? sea.waterEnv : studioEnv;
   scene.environmentIntensity = onWater ? 0.75 : 0.8;
   // Studio: Khronos PBR Neutral keeps paint hues true (ACES pushes red to crimson and navy to
   // violet) and rolls white decks off softly instead of clipping them. Water: ACES, whose
@@ -332,17 +380,17 @@ function applyScene(build) {
   }
   key.target.position.set(0, 0, 0);
   fitKeyShadow();
-  water.material.uniforms.uGlowOn.value = onWater && current.leds.length ? 1 : 0;
+  if (sea) u.uGlowOn.value = onWater && current.leds.length ? 1 : 0;
   if (!onWater) contact.bake();
   if (skipper) skipper.root.visible = onWater;
   if (onWater) {
-    loadSkipper().then((s) => {
+    sea.loadSkipper().then((s) => {
       skipper = s;
       if (!s.root.parent) offset.add(s.root);
       s.root.visible = onWater;
       if (!onWater) return;
       vessel.updateMatrixWorld(true);
-      placeSkipper(s, current.helm);
+      sea.placeSkipper(s, current.helm);
       collectOcclusionHidden();
     });
   }
@@ -519,7 +567,7 @@ function createContactShadow() {
     material.uniforms.uVP.value.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     keyMat.uniforms.uLight.value.copy(light);
 
-    const hidden = [floor, mesh, sky, water, underwater].filter((o) => o.visible);
+    const hidden = [floor, mesh, ...(sea ? [sea.sky, sea.water, sea.underwater] : [])].filter((o) => o.visible);
     hidden.forEach((o) => { o.visible = false; });
     const saved = { target: renderer.getRenderTarget(), alpha: renderer.getClearAlpha(), clipping: renderer.clippingPlanes };
     renderer.getClearColor(clear);
@@ -550,6 +598,8 @@ function createContactShadow() {
   return { mesh, bake };
 }
 
+performance.mark('scene-module-end');
+
 // Renderer and reflection target follow the stage size.
 export function resizeRenderer(width, height) {
   renderer.setSize(width, height, false);
@@ -559,22 +609,20 @@ export function resizeRenderer(width, height) {
   const w = Math.max(1, Math.round(buffer.x * scale));
   const h = Math.max(1, Math.round(buffer.y * scale));
   mirrorRT.setSize(w, h);
-  water.material.uniforms.uTexel.value.set(1 / w, 1 / h);
+  if (sea) sea.water.material.uniforms.uTexel.value.set(1 / w, 1 / h);
 }
 
 // ---------- water reflection: the scene mirrored in y = 0, clipped at the surface ----------
 
 const mirrorCam = new THREE.PerspectiveCamera();
 const mirrorRT = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: lowPower ? 0 : 4 });
-const Y_AXIS = new THREE.Vector3(0, 1, 0);
-const mirrorClip = [new THREE.Plane(Y_AXIS.clone(), 0)];
 const mirrorBias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
 const look = new THREE.Vector3();
-water.material.uniforms.tReflect.value = mirrorRT.texture;
 
 // Renders the mirror image for camera (target is accepted for compatibility; the camera's own
 // direction is used, so the reflection never drifts from the view).
 export function renderReflection(camera) {
+  const { water, sky, underwater } = sea;
   camera.updateMatrixWorld();
   mirrorCam.copy(camera);
   mirrorCam.position.set(camera.position.x, -camera.position.y, camera.position.z);
@@ -591,7 +639,7 @@ export function renderReflection(camera) {
   renderer.setRenderTarget(mirrorRT);
   renderer.render(scene, mirrorCam);
   renderer.setRenderTarget(null);
-  renderer.clippingPlanes = [];
+  renderer.clippingPlanes = openClip;
   sky.material.uniforms.uAlpha.value = 1;
   water.visible = underwater.visible = true;
   sky.position.copy(camera.position);
@@ -620,6 +668,7 @@ export function tick(t) {
   lastT = t;
   if (!onWater) return;
   const run = reduceMotion ? 0 : 1;
+  const { water, spray, whiteWater, seaHeight } = sea;
   const u = water.material.uniforms;
   u.uTime.value = t * run;
   // Wrapped well short of where float precision would coarsen the streaming ripples and foam.
@@ -700,7 +749,8 @@ const aoBox = new THREE.Box3();
 function collectOcclusionHidden() {
   aoHidden.length = 0;
   aoDrawn.length = 0;
-  aoHidden.push(sky, underwater, contact.mesh, spray.object, whiteWater.mesh);
+  aoHidden.push(contact.mesh);
+  if (sea) aoHidden.push(sea.sky, sea.underwater, sea.spray.object, sea.whiteWater.mesh);
   for (const part of [current.boat, current.trailer, current.cradle]) {
     part.traverse((o) => {
       if (o.isPoints || o.isLine) aoHidden.push(o);
@@ -712,7 +762,8 @@ function collectOcclusionHidden() {
     });
   }
   if (skipper?.root.visible) for (const mesh of skipper.meshes) aoDrawn.push({ mesh, side: mesh.material.side, material: null });
-  aoDrawn.push({ mesh: floor, side: THREE.FrontSide, material: null }, { mesh: water, side: THREE.FrontSide, material: null });
+  aoDrawn.push({ mesh: floor, side: THREE.FrontSide, material: null });
+  if (sea) aoDrawn.push({ mesh: sea.water, side: THREE.FrontSide, material: null });
   // AO only round the rig: the floor and water just beyond it, nothing further out.
   aoBox.copy(shadowBox).expandByScalar(0.35);
   aoBox.min.y = Math.min(aoBox.min.y, -0.05);
@@ -830,6 +881,7 @@ function createPost() {
   }
 
   return {
+    target,
     render(camera) {
       renderer.getDrawingBufferSize(size);
       if (target.width !== size.x || target.height !== size.y) target.setSize(size.x, size.y);
@@ -847,13 +899,15 @@ function createPost() {
 // One shadow update, the reflection when afloat, then the frame itself.
 const bufferSize = new THREE.Vector2();
 export function renderFrame(camera) {
+  frameCamera = camera;
+  if (paused) return;
   if (qaPerf) qaPerf.camera = camera;
   renderer.shadowMap.needsUpdate = true;
   if (onWater) {
-    spray.setScale(renderer.getDrawingBufferSize(bufferSize).y * camera.projectionMatrix.elements[5] / 2);
+    sea.spray.setScale(renderer.getDrawingBufferSize(bufferSize).y * camera.projectionMatrix.elements[5] / 2);
     renderReflection(camera);
+    sea.sky.position.copy(camera.position);
   }
-  sky.position.copy(camera.position);
   if (post) post.render(camera);
   else renderer.render(scene, camera);
 }
@@ -882,13 +936,44 @@ export function snapshot(camera) {
 // Runs forever: step() moves the camera, then the scene ticks and renders.
 export function startLoop(camera, controls, step) {
   const timer = new THREE.Timer();
+  let frames = 0;
   function frame(now) {
     timer.update(now);
     step();
     tick(timer.getElapsed());
     controls.update();
+    if (frames < 3) performance.mark(`frame-${frames}-start`);
     renderFrame(camera, controls.target);
+    if (frames < 3) performance.mark(`frame-${frames}-end`);
+    frames++;
     requestAnimationFrame(frame);
   }
   frame();
+}
+
+// QA: ?qaCompile exposes window.qaCompile = { scene, renderer, frame, salt }: salt(test) marks the
+// materials of every object test(object) accepts with a fresh define, so the browser's shader cache
+// cannot serve them and the next frame() compiles them cold, which times a first visit's shaders.
+export function qaCompileHandles(camera) {
+  let n = 0;
+  return {
+    scene,
+    renderer,
+    frame: () => renderFrame(camera),
+    salt(test) {
+      const seen = new Set();
+      let count = 0;
+      scene.traverse((o) => {
+        if (!o.material || !test(o)) return;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+          if (seen.has(m)) continue;
+          seen.add(m);
+          m.defines = { ...(m.defines || {}), [`SALT_${Date.now()}_${n++}`]: 1 };
+          m.needsUpdate = true;
+          count++;
+        }
+      });
+      return count;
+    },
+  };
 }

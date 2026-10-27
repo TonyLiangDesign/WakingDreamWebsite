@@ -2,7 +2,7 @@ import {
   MODELS, LAYOUTS, HULL_COLOURS, TRIM_COLOURS, ENGINES, COWLINGS, OPTIONS, DEALERS, PRICE_MODES,
   engineAllowed, optionAllowed, normalise, resolve, lineItems, specText, shownTotal, nzd, toHash, fromHash,
 } from './config.js';
-import { reduceMotion, stage, mountBoat, resizeRenderer, renderFrame, snapshot, startLoop } from './scene.js';
+import { reduceMotion, stage, mountBoat, resizeRenderer, renderFrame, snapshot, startLoop, compileScene, seaReady, loadSea, qaCompileHandles } from './scene.js';
 import { qaHold, camera, controls, flyTo, startSpin, rigChanged, resizeCamera, stepCamera, specShot, rigOnScreen } from './camera.js';
 import './style.css';
 
@@ -83,6 +83,10 @@ function syncControls() {
   document.body.classList.toggle('kiosk', build.kiosk);
   $('#kiosk-toggle').textContent = build.kiosk ? 'Exit kiosk mode' : 'Boat-show kiosk mode';
   for (const button of document.querySelectorAll('[data-scene]')) button.setAttribute('aria-pressed', String(button.dataset.scene === build.scene));
+  // The water shows once its chunk has loaded and compiled (scene.js); the button says so.
+  const waitingForSea = build.scene === 'water' && !seaReady();
+  document.querySelector('[data-scene="water"]').toggleAttribute('aria-busy', waitingForSea);
+  if (waitingForSea) loadSea().then(syncControls);
   $('#scene-note').hidden = !(build.scene === 'water' && build.options.includes('trailer'));
   $('#build-field').value = `${specText(build)} · ${location.origin}${location.pathname}${toHash(build)}`;
   history.replaceState(null, '', toHash(build));
@@ -383,8 +387,10 @@ for (const el of [stage, $('.stage-top'), $('.stage-views'), attract]) stageObse
 if (matchMedia('(max-width: 979px)').matches) $('.builder').open = false;
 renderControls();
 syncControls();
-document.fonts.ready.then(() => {
+document.fonts.ready.then(async () => {
+  performance.mark('rebuild-start');
   rebuild();
+  performance.mark('rebuild-end');
   resize();
   // QA hooks: ?qaView=side holds a fixed view with no auto-rotate, for repeatable screenshots;
   // ?qaScroll=600 scrolls the page first (phones: the sticky stage); either one also writes the
@@ -393,6 +399,10 @@ document.fonts.ready.then(() => {
   const qaView = params.get('qaView');
   const qaScroll = Number(params.get('qaScroll')) || 0;
   view(qaView || 'hero', true);
+  // The boat's shaders link off the main thread while the cover shows; the first frame then
+  // draws without a stall.
+  await compileScene(camera);
+  performance.mark('compiled');
   if (!qaView) {
     // Hold the framed hero shot while the loading cover fades, then ease into the turn.
     startSpin(1.2);
@@ -401,10 +411,11 @@ document.fonts.ready.then(() => {
   startLoop(camera, controls, stepCamera);
   started = true;
   // Lift the cover once the first frames are drawn (shaders compiled), so it fades onto the boat.
-  requestAnimationFrame(() => requestAnimationFrame(() => $('#loading').classList.add('done')));
+  requestAnimationFrame(() => requestAnimationFrame(() => { performance.mark('first-frames'); $('#loading').classList.add('done'); }));
   // ?qaCam=px,py,pz,tx,ty,tz parks the camera (world metres) for close-up QA shots.
   const qaCam = (params.get('qaCam') || '').split(',').map(Number);
   if (qaCam.length === 6 && qaCam.every(Number.isFinite)) qaHold(qaCam.slice(0, 3), qaCam.slice(3));
   if (qaScroll) scrollTo(0, qaScroll);
+  if (params.has('qaCompile')) window.qaCompile = qaCompileHandles(camera);
   if (qaView || qaScroll) setInterval(() => { document.body.dataset.qaFrame = JSON.stringify(rigOnScreen()); }, 250);
 });
