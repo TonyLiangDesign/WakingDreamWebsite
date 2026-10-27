@@ -293,6 +293,7 @@ body[data-product="unreal"] { --bg: #000; background: #000; }
 .tile-foot { margin-top: 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .tile[data-product="onechair"] { --accent: #b08a4a; }
 .tile[data-product="tessera"]  { --accent: #7fbfcc; }
+.tile[data-product="boat"]     { --accent: #7fbfcc; }
 .tile[data-product="titanic"]  { --accent: #9db3d6; }
 
 @media (max-width: 820px) { .tiles .wrap { grid-template-columns: 1fr; } }
