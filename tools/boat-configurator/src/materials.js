@@ -245,6 +245,49 @@ function vinylGrain() {
   return normalMapFrom(noiseField(n, [[64, 1], [128, 0.5], [16, 0.25]], 23), n, 2.2, 6);
 }
 
+// ---------- one shader program for the whole boat ----------
+
+// three.js links a separate program for every combination of material features: which maps are
+// present, clearcoat or sheen on or off, transparent or not, one side or both. Each program is a
+// compile on a first visit (seconds on a weak GPU; the studio start once linked thirty of them),
+// so every lit boat material comes from lit(), which gives it the same full feature set and makes
+// the features a part does not use contribute nothing: a 1x1 white map, roughness map and
+// emissive map multiply by one; a 1x1 flat normal map and clearcoat normal map with a zero scale
+// leave the normal alone; a vanishing, fully rough clearcoat adds under 1e-5 of radiance; and
+// sheen with a black sheen colour is zero by construction. What the shader still has to tell apart
+// is transparency, a bump map (the trailer's; a normal map would override it) and the side.
+const pixel = (r, g, b, colorSpace) => {
+  const texture = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1);
+  texture.colorSpace = colorSpace;
+  texture.needsUpdate = true;
+  return texture;
+};
+const BLANK = { white: pixel(255, 255, 255, THREE.SRGBColorSpace), one: pixel(255, 255, 255, THREE.NoColorSpace), flat: pixel(128, 128, 255, THREE.NoColorSpace) };
+const NO_CLEARCOAT = 1e-6;
+export function lit(params = {}) {
+  const p = { ...params };
+  p.map ??= BLANK.white;
+  p.roughnessMap ??= BLANK.one;
+  p.emissiveMap ??= BLANK.white;
+  if (!p.bumpMap && !p.normalMap) {
+    p.normalMap = BLANK.flat;
+    p.normalScale = new THREE.Vector2(0, 0);
+  }
+  if (!(p.clearcoat > 0)) clearcoat(p, false);
+  if (!p.clearcoatNormalMap) {
+    p.clearcoatNormalMap = BLANK.flat;
+    p.clearcoatNormalScale = new THREE.Vector2(0, 0);
+  }
+  if (!(p.sheen > 0)) p.sheen = 1;
+  return new THREE.MeshPhysicalMaterial(p);
+}
+// Turns a material's clearcoat off (to the vanishing layer above, not to zero, which would be a
+// program of its own) or back on with the given roughness.
+export function clearcoat(material, on, roughness = 0.05) {
+  material.clearcoat = on ? 1 : NO_CLEARCOAT;
+  material.clearcoatRoughness = on ? roughness : 1;
+}
+
 // Shared materials. Many parts build on these directly, so each one is tuned to read as its
 // real counterpart under both the studio softboxes and the open-water sky:
 //   paint      two-pack polyurethane over alloy plate: a pigmented, low-specular base under a
@@ -263,37 +306,37 @@ export function createMaterials() {
   const brushed = brushedTexture();
   const tread = treadTexture();
   const m = {
-    paint: new THREE.MeshPhysicalMaterial({
+    paint: lit({
       roughness: 0.5, specularIntensity: 0.35, map: paintTone(),
       clearcoat: 1, clearcoatRoughness: 0.035, clearcoatNormalMap: orangePeel(), clearcoatNormalScale: new THREE.Vector2(0.02, 0.02),
       side: THREE.DoubleSide,
     }),
-    alloy: new THREE.MeshPhysicalMaterial({ color: '#b8bdc1', metalness: 1, roughness: 0.48, roughnessMap: brushed, side: THREE.DoubleSide }),
-    deck: new THREE.MeshStandardMaterial({ color: '#c9ccca', roughness: 0.6, side: THREE.DoubleSide }),
-    nonslip: new THREE.MeshStandardMaterial({ color: '#d6d8d6', map: tread, bumpMap: tread, bumpScale: 1.2, roughness: 0.95, side: THREE.DoubleSide }),
-    screen: new THREE.MeshStandardMaterial({ color: '#05080b', emissive: '#ffffff', emissiveMap: chartTexture(), emissiveIntensity: 0.55, roughness: 0.12 }),
-    dash: new THREE.MeshStandardMaterial({ color: '#2b2e31', roughness: 0.5, side: THREE.DoubleSide }),
-    lens: new THREE.MeshPhysicalMaterial({ color: '#f4f6f8', emissive: '#fff4dc', emissiveIntensity: 0.4, roughness: 0.1, clearcoat: 1, clearcoatRoughness: 0.03 }),
-    navRed: new THREE.MeshStandardMaterial({ color: '#5a0d0d', emissive: '#e0261d', emissiveIntensity: 0.8, roughness: 0.2 }),
-    navGreen: new THREE.MeshStandardMaterial({ color: '#0b3d1c', emissive: '#1fc85a', emissiveIntensity: 0.8, roughness: 0.2 }),
-    trim: new THREE.MeshPhysicalMaterial({ roughness: 0.42, specularIntensity: 0.5, clearcoat: 1, clearcoatRoughness: 0.05, side: THREE.DoubleSide }),
-    glass: new THREE.MeshPhysicalMaterial({ color: '#1a2724', metalness: 0, roughness: 0.02, ior: 1.52, transparent: true, opacity: 0.5, envMapIntensity: 1.6 }),
-    rubber: new THREE.MeshPhysicalMaterial({ color: '#131415', roughness: 0.86, specularIntensity: 0.6, sheen: 0.35, sheenColor: '#3a3d40', sheenRoughness: 0.7 }),
-    stainless: new THREE.MeshStandardMaterial({ color: '#cdd1d4', metalness: 1, roughness: 0.075 }),
-    cowling: new THREE.MeshPhysicalMaterial({ roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.06 }),
-    decal: new THREE.MeshStandardMaterial({ color: '#7b8187', roughness: 0.4, metalness: 0.4 }),
-    prop: new THREE.MeshStandardMaterial({ color: '#c9ccce', metalness: 1, roughness: 0.18, side: THREE.DoubleSide }),
-    galv: new THREE.MeshStandardMaterial({ color: '#a7acae', metalness: 0.85, roughness: 0.55, roughnessMap: brushed }),
-    tyre: new THREE.MeshStandardMaterial({ color: '#111213', roughness: 0.92 }),
-    carpet: new THREE.MeshStandardMaterial({ color: '#2b2e30', roughness: 1 }),
-    seat: new THREE.MeshPhysicalMaterial({
+    alloy: lit({ color: '#b8bdc1', metalness: 1, roughness: 0.48, roughnessMap: brushed, side: THREE.DoubleSide }),
+    deck: lit({ color: '#c9ccca', roughness: 0.6, side: THREE.DoubleSide }),
+    nonslip: lit({ color: '#d6d8d6', map: tread, bumpMap: tread, bumpScale: 1.2, roughness: 0.95, side: THREE.DoubleSide }),
+    screen: lit({ color: '#05080b', emissive: '#ffffff', emissiveMap: chartTexture(), emissiveIntensity: 0.55, roughness: 0.12 }),
+    dash: lit({ color: '#2b2e31', roughness: 0.5, side: THREE.DoubleSide }),
+    lens: lit({ color: '#f4f6f8', emissive: '#fff4dc', emissiveIntensity: 0.4, roughness: 0.1, clearcoat: 1, clearcoatRoughness: 0.03 }),
+    navRed: lit({ color: '#5a0d0d', emissive: '#e0261d', emissiveIntensity: 0.8, roughness: 0.2 }),
+    navGreen: lit({ color: '#0b3d1c', emissive: '#1fc85a', emissiveIntensity: 0.8, roughness: 0.2 }),
+    trim: lit({ roughness: 0.42, specularIntensity: 0.5, clearcoat: 1, clearcoatRoughness: 0.05, side: THREE.DoubleSide }),
+    glass: lit({ color: '#1a2724', metalness: 0, roughness: 0.02, ior: 1.52, transparent: true, opacity: 0.5, envMapIntensity: 1.6 }),
+    rubber: lit({ color: '#131415', roughness: 0.86, specularIntensity: 0.6, sheen: 0.35, sheenColor: '#3a3d40', sheenRoughness: 0.7 }),
+    stainless: lit({ color: '#cdd1d4', metalness: 1, roughness: 0.075 }),
+    cowling: lit({ roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.06 }),
+    decal: lit({ color: '#7b8187', roughness: 0.4, metalness: 0.4 }),
+    prop: lit({ color: '#c9ccce', metalness: 1, roughness: 0.18, side: THREE.DoubleSide }),
+    galv: lit({ color: '#a7acae', metalness: 0.85, roughness: 0.55, roughnessMap: brushed }),
+    tyre: lit({ color: '#111213', roughness: 0.92 }),
+    carpet: lit({ color: '#2b2e30', roughness: 1 }),
+    seat: lit({
       color: '#e7e4dd', roughness: 0.56, specularIntensity: 0.7, normalMap: vinylGrain(), normalScale: new THREE.Vector2(0.25, 0.25),
       clearcoat: 0.12, clearcoatRoughness: 0.4, sheen: 0.2, sheenColor: '#ffffff', sheenRoughness: 0.5,
     }),
-    rod: new THREE.MeshStandardMaterial({ color: '#16181a', roughness: 0.35 }),
-    wood: new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.82 }),
-    tailLight: new THREE.MeshStandardMaterial({ color: '#5a0d0d', emissive: '#d4231c', emissiveIntensity: 0.6 }),
-    led: new THREE.MeshPhysicalMaterial({ color: '#0b2a4a', emissive: '#3fa9ff', emissiveIntensity: 1.5, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.04 }),
+    rod: lit({ color: '#16181a', roughness: 0.35 }),
+    wood: lit({ map: woodTexture(), roughness: 0.82 }),
+    tailLight: lit({ color: '#5a0d0d', emissive: '#d4231c', emissiveIntensity: 0.6 }),
+    led: lit({ color: '#0b2a4a', emissive: '#3fa9ff', emissiveIntensity: 1.5, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.04 }),
   };
   return m;
 }
@@ -308,14 +351,13 @@ export function applyBuild(m, build) {
     m.paint.color.set('#c3c8cb');
     m.paint.metalness = 1;
     m.paint.roughness = 0.44;
-    m.paint.clearcoat = 0;
+    clearcoat(m.paint, false);
   } else {
     m.paint.color.set(hull.hex);
     m.paint.metalness = 0;
     m.paint.roughness = 0.5;
-    m.paint.clearcoat = 1;
+    clearcoat(m.paint, true, 0.035);
   }
-  m.paint.needsUpdate = true;
 
   const trim = hex(TRIM_COLOURS, build.trim);
   m.trim.color.set(trim.hex || (hull.metal ? '#c3c8cb' : hull.hex));
@@ -323,7 +365,7 @@ export function applyBuild(m, build) {
   m.trim.metalness = bareTrim ? 1 : 0;
   m.trim.roughness = bareTrim ? 0.38 : 0.42;
   m.trim.specularIntensity = bareTrim ? 1 : 0.5;
-  m.trim.clearcoat = bareTrim ? 0 : 1;
+  clearcoat(m.trim, !bareTrim, 0.05);
 
   const cowl = hex(COWLINGS, build.cowling);
   m.cowling.color.set(cowl.hex);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lit } from '../materials.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { add, tube, rod, box, loft, spaced, v3, lerp, clamp01 } from './kit.js';
@@ -23,33 +24,29 @@ function ownMaterials() {
   if (!own.line) {
     // Fishing tackle (noFit): line on the spool, dark anodised reel frame, gold and polished
     // accents, EVA grips, the blank (below) and the guides.
-    own.line = new THREE.MeshStandardMaterial({ color: '#6d8c99', roughness: 0.55 });
-    own.reel = new THREE.MeshStandardMaterial({ color: '#202327', metalness: 0.75, roughness: 0.3 });
-    own.reelGold = new THREE.MeshStandardMaterial({ color: '#d2a443', metalness: 1, roughness: 0.28 });
-    own.reelSilver = new THREE.MeshStandardMaterial({ color: '#dfe3e6', metalness: 1, roughness: 0.18 });
-    own.grip = new THREE.MeshStandardMaterial({ color: '#1b1c1d', roughness: 0.85 });
+    own.line = lit({ color: '#6d8c99', roughness: 0.55 });
+    own.reel = lit({ color: '#202327', metalness: 0.75, roughness: 0.3 });
+    own.reelGold = lit({ color: '#d2a443', metalness: 1, roughness: 0.28 });
+    own.reelSilver = lit({ color: '#dfe3e6', metalness: 1, roughness: 0.18 });
+    own.grip = lit({ color: '#1b1c1d', roughness: 0.85 });
     own.blank = blankMaterial();
-    own.whip = new THREE.MeshStandardMaterial({ color: '#efeee9', roughness: 0.4 });
+    own.whip = lit({ color: '#efeee9', roughness: 0.4 });
     for (const key of ['line', 'reel', 'reelGold', 'reelSilver', 'grip', 'blank', 'whip']) own[key].userData.noFit = true;
     // Polished stainless anchor. The share hangs with its convex face forward and down, so as a
     // plain mirror it would reflect only the dark studio floor and read as a black blade. Like a
     // white bounce card under a product shot, reflections that point below the horizon are folded
     // up onto the walls and softboxes (on the water: onto the sky, as the sea would mirror it).
-    own.anchor = new THREE.MeshStandardMaterial({ color: '#f2f4f6', metalness: 1, roughness: 0.22, envMapIntensity: 1.35 });
-    own.anchor.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace('#include <envmap_physical_pars_fragment>', THREE.ShaderChunk.envmap_physical_pars_fragment.replace(
-        'reflectVec = transformDirectionByInverseViewMatrix( reflectVec, viewMatrix );',
-        'reflectVec = transformDirectionByInverseViewMatrix( reflectVec, viewMatrix );\n\t\t\treflectVec.y = reflectVec.y < 0.0 ? - reflectVec.y * 0.4 : reflectVec.y;\n\t\t\treflectVec = normalize( reflectVec );'));
-    };
-    own.anchor.customProgramCacheKey = () => 'anchor-bounce';
+    // The fold is uBounce in the shared boat shader (wet.js), so it needs no program of its own.
+    own.anchor = lit({ color: '#f2f4f6', metalness: 1, roughness: 0.22, envMapIntensity: 1.35 });
+    own.anchor.userData.wetUniforms = { uBounce: { value: 1 } };
     // Clear-anodised, brushed alloy for the bowsprit (the brushed roughness map is set per build).
-    own.sprit = new THREE.MeshPhysicalMaterial({ color: '#b4babf', metalness: 0.85, roughness: 0.3, clearcoat: 0.2, clearcoatRoughness: 0.3 });
-    own.white = new THREE.MeshStandardMaterial({ color: '#f2f2ee', emissive: '#fff8e8', emissiveIntensity: 0.5, roughness: 0.15 });
-    own.hole = new THREE.MeshStandardMaterial({ color: '#0b0b0c', roughness: 0.95 });
+    own.sprit = lit({ color: '#b4babf', metalness: 0.85, roughness: 0.3, clearcoat: 0.2, clearcoatRoughness: 0.3 });
+    own.white = lit({ color: '#f2f2ee', emissive: '#fff8e8', emissiveIntensity: 0.5, roughness: 0.15 });
+    own.hole = lit({ color: '#0b0b0c', roughness: 0.95 });
     // Glossy coloured nav-light lenses with a moderate glow: they read as red and green lenses
     // by day, not as flat emissive blocks.
-    own.lensRed = new THREE.MeshPhysicalMaterial({ color: '#a8121a', emissive: '#ff2216', emissiveIntensity: 0.6, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.04 });
-    own.lensGreen = new THREE.MeshPhysicalMaterial({ color: '#0d8a3c', emissive: '#22e066', emissiveIntensity: 0.55, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.04 });
+    own.lensRed = lit({ color: '#a8121a', emissive: '#ff2216', emissiveIntensity: 0.6, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.04 });
+    own.lensGreen = lit({ color: '#0d8a3c', emissive: '#22e066', emissiveIntensity: 0.55, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.04 });
     for (const mat of Object.values(own)) mat.userData.shared = true;
   }
   return own;
@@ -64,20 +61,13 @@ export function whipMaterial() {
 // Rod blanks taper to a 5 mm tip, well under a pixel at hero distance, where they would break
 // up into dots. This material keeps every blank at least about one CSS pixel wide: the vertex
 // shader pushes each vertex out along its normal by half a pixel's worth of view-space length
-// at its depth. Close up the push is a fraction of a millimetre, so the real taper shows.
+// at its depth. Close up the push is a fraction of a millimetre, so the real taper shows. The
+// push is uPush in the shared boat shader (wet.js), so the blanks need no program of their own.
 function blankMaterial() {
   const halfHeight = { value: 450 };
   const size = new THREE.Vector2();
-  const mat = new THREE.MeshStandardMaterial({ color: '#16181a', roughness: 0.35 });
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uHalfHeight = halfHeight;
-    shader.vertexShader = `uniform float uHalfHeight;\n${shader.vertexShader.replace('#include <project_vertex>', `
-      vec4 mvPosition = modelViewMatrix * vec4( transformed, 1.0 );
-      float pixel = -mvPosition.z / ( projectionMatrix[ 1 ][ 1 ] * uHalfHeight );
-      mvPosition.xyz += normalize( normalMatrix * objectNormal ) * pixel * 0.5;
-      gl_Position = projectionMatrix * mvPosition;`)}`;
-  };
-  mat.customProgramCacheKey = () => 'rod-blank-min-width';
+  const mat = lit({ color: '#16181a', roughness: 0.35 });
+  mat.userData.wetUniforms = { uPush: { value: 0.5 }, uHalfHeight: halfHeight };
   mat.userData.noFit = true;
   mat.onBeforeRender = (renderer) => { halfHeight.value = renderer.getSize(size).y / 2 || 450; };
   return mat;
@@ -429,7 +419,7 @@ function bowEye(group, lines, m) {
 export function bowFittings(group, lines, m) {
   const { L } = lines;
   const mats = ownMaterials();
-  mats.sprit.roughnessMap = m.alloy.roughnessMap || null;
+  mats.sprit.roughnessMap = m.alloy.roughnessMap;
   const sp = spritLines(lines);
   const { deck, xa, floor, xr, yr, rn, bottom, top, cz } = sp;
   bowEye(group, lines, m);

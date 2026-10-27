@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lit } from '../materials.js';
 import { add, ribbon, loft, crossSection, spaced, v3, lerp, clamp01 } from './kit.js';
 
 // Hull lines and the shell: bottom plates, reverse chine, topsides with the knuckle and plate
@@ -275,7 +276,7 @@ const decalCache = new Map();
 function decalMaterial(name, colour) {
   const key = `${name}|${colour}`;
   if (!decalCache.has(key)) {
-    const material = new THREE.MeshPhysicalMaterial({
+    const material = lit({
       map: nameTexture(name, colour), normalMap: vinylEdgeNormal(name), normalScale: new THREE.Vector2(1, 1),
       roughness: 0.26, specularIntensity: 0.9, transparent: true, alphaTest: 0.02, depthWrite: false,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
@@ -407,7 +408,7 @@ function millTexture() {
 }
 export function plateAlloy() {
   if (!millPlate) {
-    millPlate = new THREE.MeshPhysicalMaterial({ color: '#bfc4c8', metalness: 1, roughness: 0.6, roughnessMap: millTexture(), side: THREE.DoubleSide });
+    millPlate = lit({ color: '#bfc4c8', metalness: 1, roughness: 0.6, roughnessMap: millTexture(), side: THREE.DoubleSide });
     millPlate.userData.shared = true;
   }
   return millPlate;
@@ -439,7 +440,7 @@ function plateUV(g, mode, seed, painted = false) {
 let pvc = null;
 function strakeMaterial() {
   if (!pvc) {
-    pvc = new THREE.MeshPhysicalMaterial({ color: '#121314', roughness: 0.4, specularIntensity: 0.8, clearcoat: 0.3, clearcoatRoughness: 0.28 });
+    pvc = lit({ color: '#121314', roughness: 0.4, specularIntensity: 0.8, clearcoat: 0.3, clearcoatRoughness: 0.28 });
     pvc.userData.shared = true;
   }
   return pvc;

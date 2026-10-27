@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lit } from '../materials.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { add, tube, rod, box, crossSection, ribbon, loft, spaced, v3, lerp } from './kit.js';
 import { DECK_Y, CAP, KEEL_BAR, topsideMaterial, plateAlloy } from './hull.js';
@@ -169,32 +170,32 @@ function parts() {
   colour.repeat.set(tile, tile);
   cache = {
     // Painted liner: a soft warm white with a satin sheen and a little orange peel.
-    liner: new THREE.MeshPhysicalMaterial({
+    liner: lit({
       color: '#d3d5d0', roughness: 0.6, clearcoat: 0.35, clearcoatRoughness: 0.32,
       normalMap: peel, normalScale: new THREE.Vector2(0.05, 0.05), side,
     }),
     // Gelcoat mouldings (bait tank, step, hatch lids): whiter and glossier than the paint.
-    gelcoat: new THREE.MeshPhysicalMaterial({
+    gelcoat: lit({
       color: '#e7e8e3', roughness: 0.26, clearcoat: 0.9, clearcoatRoughness: 0.1,
       normalMap: peel, normalScale: new THREE.Vector2(0.05, 0.05), side,
     }),
-    shade: new THREE.MeshStandardMaterial({ color: '#6c706e', roughness: 0.8, side }),
-    pocket: new THREE.MeshStandardMaterial({ color: '#363a39', roughness: 0.92, side }),
-    nonslip: new THREE.MeshStandardMaterial({
+    shade: lit({ color: '#6c706e', roughness: 0.8, side }),
+    pocket: lit({ color: '#363a39', roughness: 0.92, side }),
+    nonslip: lit({
       color: '#ffffff', map: colour, normalMap: diamonds, normalScale: new THREE.Vector2(1, 1), roughness: 0.9, side,
     }),
     // Marine vinyl over foam: a soft sheen that shows the rolls.
-    bolster: new THREE.MeshPhysicalMaterial({
+    bolster: lit({
       color: '#3a3f44', roughness: 0.46, clearcoat: 0.25, clearcoatRoughness: 0.45,
       sheen: 0.6, sheenRoughness: 0.55, sheenColor: new THREE.Color('#8f979e'),
     }),
-    hdpe: new THREE.MeshStandardMaterial({ color: '#ffffff', map: hdpeTexture(), roughness: 0.66 }),
-    groove: new THREE.MeshStandardMaterial({ color: '#c2c4be', roughness: 0.85 }),
+    hdpe: lit({ color: '#ffffff', map: hdpeTexture(), roughness: 0.66 }),
+    groove: lit({ color: '#c2c4be', roughness: 0.85 }),
     // Satin-polished stainless for the frames, ladder and small fittings: a broad highlight that
     // reads as steel against the dark studio, where mirror polish only reflects black.
-    satin: new THREE.MeshStandardMaterial({ color: '#e4e7e9', metalness: 1, roughness: 0.42 }),
-    tint: new THREE.MeshStandardMaterial({ color: '#1c2a33', roughness: 0.08, metalness: 0.3 }),
-    basin: new THREE.MeshStandardMaterial({ color: '#8d9295', metalness: 1, roughness: 0.32 }),
+    satin: lit({ color: '#e4e7e9', metalness: 1, roughness: 0.42 }),
+    tint: lit({ color: '#1c2a33', roughness: 0.08, metalness: 0.3 }),
+    basin: lit({ color: '#8d9295', metalness: 1, roughness: 0.32 }),
   };
   for (const mat of Object.values(cache)) mat.userData.shared = true;
   return cache;

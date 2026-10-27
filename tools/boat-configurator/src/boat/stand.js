@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lit } from '../materials.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { add, tube, loft, mergeStatic, spaced, v3, lerp, clamp01 } from './kit.js';
 import { KEEL_BAR } from './hull.js';
@@ -420,22 +421,22 @@ function standMats() {
   const tyre = tyreBump();
   const galv = { color: '#a9aeb1', metalness: 0.85, roughness: 1, map: sp.map, roughnessMap: sp.rough };
   MATS = {
-    galv: shared(new THREE.MeshStandardMaterial(galv)),
-    rim: shared(new THREE.MeshStandardMaterial({ ...galv, side: THREE.DoubleSide })),
+    galv: shared(lit(galv)),
+    rim: shared(lit({ ...galv, side: THREE.DoubleSide })),
     // Zinc-plated wheel nuts, jack screws and hub caps: brighter and smoother than the dip.
-    zinc: shared(new THREE.MeshStandardMaterial({ color: '#c4c8cb', metalness: 0.9, roughness: 0.32 })),
-    tread: shared(new THREE.MeshStandardMaterial({ color: '#b0b5b7', metalness: 0.85, roughness: 0.5, map: sp.map, bumpMap: treadBump(), bumpScale: 2.5 })),
-    tyre: shared(new THREE.MeshStandardMaterial({ color: '#141516', roughness: 1, roughnessMap: tyre.rough, bumpMap: tyre.bump, bumpScale: 2.2 })),
+    zinc: shared(lit({ color: '#c4c8cb', metalness: 0.9, roughness: 0.32 })),
+    tread: shared(lit({ color: '#b0b5b7', metalness: 0.85, roughness: 0.5, map: sp.map, bumpMap: treadBump(), bumpScale: 2.5 })),
+    tyre: shared(lit({ color: '#141516', roughness: 1, roughnessMap: tyre.rough, bumpMap: tyre.bump, bumpScale: 2.2 })),
     // Display cradle: keel blocks in satin slate-grey paint.
-    paint: shared(new THREE.MeshStandardMaterial({ color: '#56616b', roughness: 0.5 })),
-    carpet: shared(new THREE.MeshStandardMaterial({ map: carpet, bumpMap: carpet, bumpScale: 1.2, roughness: 1 })),
-    plastic: shared(new THREE.MeshStandardMaterial({ color: '#141516', roughness: 0.42 })),
-    redLens: shared(new THREE.MeshStandardMaterial({ color: '#6a0f0c', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3a0705', '#ff3a2a'), emissiveIntensity: 0.9 })),
-    amberLens: shared(new THREE.MeshStandardMaterial({ color: '#7a4a08', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3b2304', '#ffae2a'), emissiveIntensity: 0.6 })),
-    whiteLens: shared(new THREE.MeshStandardMaterial({ color: '#e8eaec', roughness: 0.1, emissive: '#fff6e0', emissiveIntensity: 0.25 })),
-    plate: shared(new THREE.MeshStandardMaterial({ map: plateTexture(), roughness: 0.35, metalness: 0.1 })),
-    strap: shared(new THREE.MeshStandardMaterial({ color: '#3d5068', roughness: 0.85 })),
-    reservoir: shared(new THREE.MeshStandardMaterial({ color: '#d8d3c4', roughness: 0.35 })),
+    paint: shared(lit({ color: '#56616b', roughness: 0.5 })),
+    carpet: shared(lit({ map: carpet, bumpMap: carpet, bumpScale: 1.2, roughness: 1 })),
+    plastic: shared(lit({ color: '#141516', roughness: 0.42 })),
+    redLens: shared(lit({ color: '#6a0f0c', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3a0705', '#ff3a2a'), emissiveIntensity: 0.9 })),
+    amberLens: shared(lit({ color: '#7a4a08', roughness: 0.15, emissive: '#ffffff', emissiveMap: ledTexture('#3b2304', '#ffae2a'), emissiveIntensity: 0.6 })),
+    whiteLens: shared(lit({ color: '#e8eaec', roughness: 0.1, emissive: '#fff6e0', emissiveIntensity: 0.25 })),
+    plate: shared(lit({ map: plateTexture(), roughness: 0.35, metalness: 0.1 })),
+    strap: shared(lit({ color: '#3d5068', roughness: 0.85 })),
+    reservoir: shared(lit({ color: '#d8d3c4', roughness: 0.35 })),
   };
   return MATS;
 }

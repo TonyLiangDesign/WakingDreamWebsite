@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lit } from '../materials.js';
 import { add, tube, rod, box, crossSection, loft, sectionRing, spaced, v3, lerp, clamp01 } from './kit.js';
 import { DECK_Y, CAP } from './hull.js';
 import { nonslipMaterial } from './cockpit.js';
@@ -224,28 +225,28 @@ export function partMaterials(m) {
   if (cache.has(m)) return cache.get(m);
   const pm = {
     // Tinted toughened glass, see-through from both sides.
-    glass: new THREE.MeshPhysicalMaterial({ color: '#2a3a42', metalness: 0, roughness: 0.04, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 1.3 }),
+    glass: lit({ color: '#2a3a42', metalness: 0, roughness: 0.04, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 1.3 }),
     // Black powder-coated window extrusions and screen frame: satin, not gloss.
-    frame: new THREE.MeshStandardMaterial({ color: '#1c1e20', metalness: 0.3, roughness: 0.48, side: THREE.DoubleSide }),
+    frame: lit({ color: '#1c1e20', metalness: 0.3, roughness: 0.48, side: THREE.DoubleSide }),
     // EPDM glazing seal, matte and a shade darker than the frame.
-    seal: new THREE.MeshStandardMaterial({ color: '#0d0e0f', roughness: 0.9, side: THREE.DoubleSide }),
+    seal: lit({ color: '#0d0e0f', roughness: 0.9, side: THREE.DoubleSide }),
     // Mid-grey marine carpet lining the cabin walls.
-    liner: new THREE.MeshStandardMaterial({ color: '#767a7e', map: linerTexture(), roughness: 0.96, side: THREE.DoubleSide }),
+    liner: lit({ color: '#767a7e', map: linerTexture(), roughness: 0.96, side: THREE.DoubleSide }),
     // Light grey vinyl headliner panels.
-    headliner: new THREE.MeshStandardMaterial({ color: '#cfd0cc', roughness: 0.74, side: THREE.DoubleSide }),
+    headliner: lit({ color: '#cfd0cc', roughness: 0.74, side: THREE.DoubleSide }),
     // Upholstery to match helm.js's seats.
-    vinyl: new THREE.MeshStandardMaterial({ color: '#e6e3dc', roughness: 0.55 }),
-    piping: new THREE.MeshStandardMaterial({ color: '#8e9195', roughness: 0.5 }),
+    vinyl: lit({ color: '#e6e3dc', roughness: 0.55 }),
+    piping: lit({ color: '#8e9195', roughness: 0.5 }),
     // LED light lens, switched off.
-    ledLens: new THREE.MeshStandardMaterial({ color: '#eef1f3', roughness: 0.28 }),
-    extinguisher: new THREE.MeshStandardMaterial({ color: '#b01a1c', roughness: 0.32 }),
+    ledLens: lit({ color: '#eef1f3', roughness: 0.28 }),
+    extinguisher: lit({ color: '#b01a1c', roughness: 0.32 }),
     // Smoked acrylic for the console screen.
-    acrylic: new THREE.MeshPhysicalMaterial({ color: '#1f2b31', metalness: 0, roughness: 0.02, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 1.6, clearcoat: 1, clearcoatRoughness: 0.03 }),
-    canvas: new THREE.MeshStandardMaterial({ roughness: 0.93, side: THREE.DoubleSide }),
-    binding: new THREE.MeshStandardMaterial({ roughness: 0.85 }),
-    white: new THREE.MeshStandardMaterial({ color: '#efeee9', roughness: 0.4 }),
+    acrylic: lit({ color: '#1f2b31', metalness: 0, roughness: 0.02, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide, envMapIntensity: 1.6, clearcoat: 1, clearcoatRoughness: 0.03 }),
+    canvas: lit({ roughness: 0.93, side: THREE.DoubleSide }),
+    binding: lit({ roughness: 0.85 }),
+    white: lit({ color: '#efeee9', roughness: 0.4 }),
     // VHF whip (hardtop and T-top): its own material so the camera fit can skip it.
-    whip: new THREE.MeshStandardMaterial({ color: '#efeee9', roughness: 0.4 }),
+    whip: lit({ color: '#efeee9', roughness: 0.4 }),
   };
   for (const mat of Object.values(pm)) mat.userData.shared = true;
   pm.whip.userData.noFit = true;

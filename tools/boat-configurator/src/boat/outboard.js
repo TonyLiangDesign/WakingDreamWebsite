@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { lit } from '../materials.js';
 import { add, tube, rod, loft, spaced, v3, lerp, clamp01, extrudeProfile } from './kit.js';
 
 // Outboards: one generic four-stroke built by outboard(), mounted single or twin on the engine
@@ -17,15 +18,15 @@ function ownMaterials(m) {
   if (!own.cowl) {
     // Painted composite under a full clear coat: a satin base with a crisp, glossy top layer,
     // so the softboxes and the sky lie on the cowl as clean highlights.
-    own.cowl = new THREE.MeshPhysicalMaterial({ roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.05 });
+    own.cowl = lit({ roughness: 0.42, clearcoat: 1, clearcoatRoughness: 0.05 });
     // Lower cowl: the same composite in a neutral tone, a colour break under the split line.
-    own.lower = new THREE.MeshPhysicalMaterial({ roughness: 0.5, clearcoat: 0.8, clearcoatRoughness: 0.12 });
-    own.leg = new THREE.MeshPhysicalMaterial({ roughness: 0.45, clearcoat: 0.3, clearcoatRoughness: 0.35 });
-    own.zinc = new THREE.MeshStandardMaterial({ color: '#8d9296', metalness: 0.55, roughness: 0.72 });
-    own.bore = new THREE.MeshStandardMaterial({ color: '#0c0c0d', roughness: 0.9, side: THREE.DoubleSide });
-    own.decal = new THREE.MeshStandardMaterial({ transparent: true, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
+    own.lower = lit({ roughness: 0.5, clearcoat: 0.8, clearcoatRoughness: 0.12 });
+    own.leg = lit({ roughness: 0.45, clearcoat: 0.3, clearcoatRoughness: 0.35 });
+    own.zinc = lit({ color: '#8d9296', metalness: 0.55, roughness: 0.72 });
+    own.bore = lit({ color: '#0c0c0d', roughness: 0.9, side: THREE.DoubleSide });
+    own.decal = lit({ transparent: true, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
     // Recessed intake louvres, drawn with their own shading (dark slot, shadowed top edge, lit lip).
-    own.vent = new THREE.MeshStandardMaterial({ map: ventTexture(), transparent: true, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
+    own.vent = lit({ map: ventTexture(), transparent: true, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false });
     for (const mat of Object.values(own)) mat.userData.shared = true;
   }
   const dark = m.cowling.color.getHSL({}).l < 0.3;
