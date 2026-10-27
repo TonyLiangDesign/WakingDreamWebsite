@@ -5,8 +5,8 @@ import { DECK_Y } from './boat/hull.js';
 
 // The skipper, shown on the water only: a rigged figure (Mixamo skeleton, 14k triangles, faces
 // +Z as authored) at the helm. A stored base pose sets the spine, head and gripping fingers; then
-// two-bone IK puts his left hand on the wheel rim at ten o'clock, his right on the throttle grip
-// (standing) or on the rim at two o'clock (seated), and his feet flat on the cockpit floor. At a
+// two-bone IK puts his hands on the wheel rim at ten and two and his feet flat on the cockpit
+// floor. At a
 // centre console he stands with his seat against the leaning post's bolster, a hand's breadth
 // behind the wheel; under a hardtop he sits on the starboard helm seat.
 //   loadSkipper()             -> Promise<skipper>, fetched once, the first time the water shows
@@ -151,12 +151,11 @@ function wristFor(b, side, grip, fwdWorld) {
 // already be in its boat frame (the scene graph above it is used for world positions).
 //   Seated (hardtop): a little forward on the cushion, sitting up with a slight lean to the wheel.
 //   Standing (console): seat against the leaning post's bolster, nearly upright.
-//   Left hand closed round the rim at ten o'clock, thumb up the rim. Right hand: standing, closed
-//   over the throttle grip from behind, thumb inboard; seated, closed round the rim at two
-//   o'clock, the mirror of the left, since the throttle on the hardtop's dash top is above
-//   shoulder height from the helm seat and reaching it put the arm straight out at head height.
-//   Each hand is turned to its grip first, then the arm is solved so the fingers close round the
-//   bar rather than the wrist landing on it.
+//   Left hand closed round the rim at ten o'clock, thumb up the rim; right hand its mirror at
+//   two o'clock. (The throttle grip is left alone: on both layouts it sits at or above shoulder
+//   height, and reaching it put the arm straight out at head height.) Each hand is turned to
+//   its grip first, then the arm is solved so the fingers close round the bar rather than the
+//   wrist landing on it.
 export function placeSkipper(s, helm) {
   const { root, bones: b, pose } = s;
   for (const [name, q] of Object.entries(pose.bones)) b[name]?.quaternion.fromArray(q);
@@ -211,25 +210,14 @@ export function placeSkipper(s, helm) {
   reach(b.LeftArm, b.LeftForeArm, b.LeftHand, lWrist, up.clone().negate().addScaledVector(right, -0.6).addScaledVector(fwd, -0.3));
   orient(b.LeftHand, L.fwd, L.across, lFwd, lAcross);
 
-  // Right hand. Standing: over the throttle grip from behind, fingers closing over its front,
-  // thumb inboard; the grip's axis runs across the boat. Seated: round the rim at two o'clock,
-  // the left hand's mirror (pinky down the rim, so the palm again faces the dash).
+  // Right hand: round the rim at two o'clock, the left hand's mirror (pinky down the rim, so the
+  // palm again faces the dash).
   const R = handAxes(b, 'Right');
-  let rFwd;
-  let rAcross;
-  let rGrip;
-  if (seated) {
-    const twoDir = rimUp.clone().multiplyScalar(0.5).addScaledVector(across, 0.866);
-    rGrip = rim.clone().addScaledVector(twoDir, radius);
-    rFwd = twoDir.clone().transformDirection(root.parent.matrixWorld);
-    rAcross = rimUp.clone().multiplyScalar(-0.866).addScaledVector(across, 0.5).transformDirection(root.parent.matrixWorld);
-  } else {
-    rGrip = helm.throttle;
-    rFwd = v3(1, -0.7, 0).normalize().transformDirection(root.parent.matrixWorld);
-    rAcross = across.clone().transformDirection(root.parent.matrixWorld);
-  }
+  const twoDir = rimUp.clone().multiplyScalar(0.5).addScaledVector(across, 0.866);
+  const rFwd = twoDir.clone().transformDirection(root.parent.matrixWorld);
+  const rAcross = rimUp.clone().multiplyScalar(-0.866).addScaledVector(across, 0.5).transformDirection(root.parent.matrixWorld);
   orient(b.RightHand, R.fwd, R.across, rFwd, rAcross);
-  const rWrist = wristFor(b, 'Right', boatPoint(root, rGrip), rFwd);
+  const rWrist = wristFor(b, 'Right', boatPoint(root, rim.clone().addScaledVector(twoDir, radius)), rFwd);
   reach(b.RightArm, b.RightForeArm, b.RightHand, rWrist, up.clone().negate().addScaledVector(right, 0.6).addScaledVector(fwd, -0.3));
   orient(b.RightHand, R.fwd, R.across, rFwd, rAcross);
 }
