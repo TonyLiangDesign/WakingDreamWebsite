@@ -406,43 +406,54 @@ export function createWater({ detail = 1 } = {}) {
         #define WAVES 10
       #endif
 
-      // Bubble cells: 0 at one random point per unit cell, rising to about 1 on the walls between
-      // them (the distance to the nearest point), so a threshold opens round holes that grow and
-      // merge into a lace of filaments.
-      float cells(vec2 p) {
+      // Cellular noise: distances to the nearest and second-nearest of one random point per unit
+      // cell. F1 is 0 at the points (round gaps open around them); F2 - F1 is 0 on the walls
+      // between cells (veins). The points keep to the middle half of their cells, so the 3 x 3
+      // search always finds the true second-nearest (no seams); the warp supplies the disorder.
+      vec2 cells(vec2 p) {
         vec2 i = floor(p);
         vec2 f = fract(p);
         float d1 = 8.0;
+        float d2 = 8.0;
         for (int y = -1; y <= 1; y++) {
           for (int x = -1; x <= 1; x++) {
             vec2 o = vec2(float(x), float(y));
-            vec2 r = o + vec2(hash(i + o), hash(i + o + vec2(57.0, 113.0))) - f;
-            d1 = min(d1, dot(r, r));
+            vec2 r = o + 0.25 + 0.5 * vec2(hash(i + o), hash(i + o + vec2(57.0, 113.0))) - f;
+            float d = dot(r, r);
+            if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
           }
         }
-        return min(sqrt(d1) * 1.5, 1.0);
+        return sqrt(vec2(d1, d2));
       }
-      // Foam: a lace of bubble cells streaming with the sea, drawn out along the flow, at density
-      // f (0..1) and age (0 right behind the transom and along the chines, 1 some tens of metres
-      // astern). Dense young foam is a white mass, churning, with a few dark holes; thinner and
-      // older foam keeps only the cell walls, a lace, and then the streaks along the flow, faint
-      // lines. Detail smaller than a few pixels (fp, the footprint in metres) fades to its mean,
-      // so it never shimmers far off.
+      // Foam streaming with the sea, at density f (0..1) and age (0 right behind the transom and
+      // along the chines, 1 some tens of metres astern). Everything is drawn out hard along the
+      // flow and bent by a slow domain warp (young foam also churns), so nothing reads as cells.
+      //   dense, young foam: solid turbulent white with small, irregular gaps (fine cells' F1,
+      //     opened only where the spread noise is low)
+      //   thinner, older foam: a lace of veins (the large cells' walls, F2 - F1) whose width
+      //     wanders with the spread noise, so the holes between them are of very different sizes
+      //     and merge and tear; then streaks along the flow, faint lines
+      // Detail smaller than a few pixels (fp, the footprint in metres) falls back to the share of
+      // the water it would cover, so it never shimmers far off.
       float foamLace(vec2 q, float f, float age, float fp) {
-        vec2 warp = (vec2(vnoise(q * 1.1 + uTime * 0.8), vnoise(q * 1.1 - uTime * 0.8 + 7.0)) - 0.5) * 0.9 * max(1.0 - age, 0.0);
-        float sharp = smoothstep(0.7, 0.2, fp * 1.7);
-        float walls = mix(0.6, cells(q * vec2(0.8, 1.7) + warp), sharp);
-        float fine = 0.6;
+        float spread = vnoise(q * vec2(0.16, 0.55));
+        vec2 warp = vec2(vnoise(q * vec2(0.45, 1.1)), vnoise(q * vec2(0.45, 1.1) + 17.0)) - 0.5;
+        warp += (vec2(vnoise(q * 1.1 + uTime * 0.8), vnoise(q * 1.1 - uTime * 0.8 + 7.0)) - 0.5) * 0.8 * max(1.0 - age, 0.0);
+        float sharp = smoothstep(0.7, 0.2, fp * 1.6);
+        vec2 c = cells(q * vec2(0.4, 1.6) + warp * 1.3);
+        float lace = mix(0.45, 1.0 - smoothstep(0.0, 0.12 + 0.45 * spread, c.y - c.x), sharp);
+        float gaps = 0.6;
         #if DETAIL == 1
-          fine = mix(0.6, cells(q * vec2(3.6, 5.5) + warp * 2.0), smoothstep(0.7, 0.2, fp * 5.5));
+          c = cells(q * vec2(1.8, 4.5) + warp * 3.0);
+          gaps = mix(0.6, min(c.x * 1.5, 1.0), smoothstep(0.7, 0.2, fp * 4.5));
         #endif
-        float streaks = mix(0.5, vnoise(q * vec2(0.35, 6.0)), smoothstep(0.5, 0.1, fp * 6.0));
-        float v = walls * 0.45 + fine * 0.4 + vnoise(q * vec2(0.18, 0.6)) * 0.35 + (streaks - 0.5) * 0.5 * min(age, 1.0);
+        float streaks = mix(0.5, vnoise(q * vec2(0.3, 6.0)), smoothstep(0.5, 0.1, fp * 6.0));
+        // Young foam fills in between the veins; only the fine gaps stay open.
+        float v = lace * 0.4 + gaps * 0.3 + spread * 0.3 + (streaks - 0.5) * 0.5 * min(age, 1.0) + 0.4 * smoothstep(0.05, 0.3, f) * smoothstep(0.4, 0.0, age);
+        float thr = 1.0 - 0.85 * f;
         // Thin foam is translucent; dense foam is shaded by its own bubbles.
-        float thr = 1.08 - 0.78 * f;
-        // Where even the large cells are unresolved, the share of the water they would cover.
-        float cover = mix(smoothstep(0.98, 0.38, thr), smoothstep(thr, thr + 0.16 + 4.0 * fp, v), sharp);
-        return cover * (0.45 + 0.55 * f) * (0.8 + 0.25 * fine);
+        float cover = mix(smoothstep(0.9, 0.3, thr), smoothstep(thr, thr + 0.14 + 4.0 * fp, v), sharp);
+        return cover * (0.45 + 0.55 * f) * (0.82 + 0.25 * gaps) * smoothstep(0.02, 0.12, f);
       }
       // The churned surface of the prop wash: lumps boiling up as they stream aft.
       float churn(vec2 q) {
